@@ -57,7 +57,20 @@ Strategy constants were not tuned after this run.
 
 Public RSS (no keys): CoinDesk, Cointelegraph, Decrypt, The Block, Kraken Blog, Bitfinex Blog.
 
-LLM scoring is **off** until `OPENAI_API_KEY` + `OPENAI_MODEL` (or Anthropic equivalents) are set in the project `.env`. Keys are read from that file only, never from the shell environment.
+LLM scoring is **off** until `OPENAI_API_KEY` + `OPENAI_MODEL` (or Anthropic equivalents) are set in the project `.env`. Keys are read from that file only, never from the shell environment. Keep `.env` local — it is gitignored and must not be committed.
+
+### OpenRouter (optional)
+
+Use any OpenAI-compatible endpoint by setting `OPENAI_BASE_URL` (default `https://api.openai.com/v1`). For [OpenRouter](https://openrouter.ai):
+
+```env
+CSB_LLM_PROVIDER=openai
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
+OPENAI_API_KEY=your-openrouter-key
+OPENAI_MODEL=openai/gpt-4o-mini
+```
+
+Copy names from `.env.example`; put real keys only in your local `.env`.
 
 ## Quick start (Windows)
 

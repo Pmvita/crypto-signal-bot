@@ -32,6 +32,7 @@ class Settings:
     llm_provider: str
     openai_api_key: str
     openai_model: str
+    openai_base_url: str
     anthropic_api_key: str
     anthropic_model: str
 
@@ -83,6 +84,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         llm_provider=provider,
         openai_api_key=get("OPENAI_API_KEY", ""),
         openai_model=get("OPENAI_MODEL", ""),
+        openai_base_url=get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
         anthropic_api_key=get("ANTHROPIC_API_KEY", ""),
         anthropic_model=get("ANTHROPIC_MODEL", ""),
     )

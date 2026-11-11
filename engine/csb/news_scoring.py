@@ -16,10 +16,12 @@ import httpx
 from csb.config import Settings
 from csb.models import HeadlineScore
 
-OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
 MAX_RATIONALE_CHARS = 240
+OPENROUTER_HTTP_REFERER = "https://github.com/Pmvita/crypto-signal-bot"
+OPENROUTER_X_TITLE = "crypto-signal-bot"
 
 SYSTEM_PROMPT = (
     "You score crypto news headlines for an automated trading system. "
@@ -118,12 +120,33 @@ def _post(client: httpx.Client, provider: str, url: str, headers: dict[str, str]
         raise ScoringError(f"{provider} returned a non-JSON body") from exc
 
 
+def openai_chat_completions_url(base_url: str) -> str:
+    return f"{base_url.rstrip('/')}/chat/completions"
+
+
+def openai_request_headers(api_key: str, base_url: str) -> dict[str, str]:
+    headers = {"Authorization": f"Bearer {api_key}"}
+    # OpenRouter recommends these public attribution headers; they are not secrets.
+    if "openrouter.ai" in base_url.lower():
+        headers["HTTP-Referer"] = OPENROUTER_HTTP_REFERER
+        headers["X-Title"] = OPENROUTER_X_TITLE
+    return headers
+
+
 class OpenAIScorer:
     provider = "openai"
 
-    def __init__(self, api_key: str, model: str, client: httpx.Client | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        client: httpx.Client | None = None,
+        *,
+        base_url: str = DEFAULT_OPENAI_BASE_URL,
+    ) -> None:
         self._api_key = api_key
         self.model = model
+        self.base_url = base_url.rstrip("/")
         self._client = client or httpx.Client(timeout=60.0)
 
     def score(self, headlines: Sequence[tuple[int, str]], coins: Sequence[str]) -> dict[int, list[HeadlineScore]]:
@@ -135,7 +158,9 @@ class OpenAIScorer:
             ],
             "response_format": {"type": "json_object"},
         }
-        data = _post(self._client, "OpenAI", OPENAI_URL, {"Authorization": f"Bearer {self._api_key}"}, payload)
+        url = openai_chat_completions_url(self.base_url)
+        headers = openai_request_headers(self._api_key, self.base_url)
+        data = _post(self._client, "OpenAI", url, headers, payload)
         try:
             text = data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
@@ -189,4 +214,4 @@ def build_scorer(settings: Settings) -> tuple[Scorer | None, str | None]:
         return None, f"{model_name} is not set in .env, so no model is selected."
     if settings.llm_provider == "anthropic":
         return AnthropicScorer(key, model), None
-    return OpenAIScorer(key, model), None
+    return OpenAIScorer(key, model, base_url=settings.openai_base_url), None

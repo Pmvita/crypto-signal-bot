@@ -89,16 +89,54 @@ def test_openai_scorer_sends_bearer_key_and_parses_response():
         seen["url"] = str(request.url)
         seen["auth"] = request.headers["authorization"]
         seen["body"] = json.loads(request.content)
+        seen["headers"] = dict(request.headers)
         return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(GOOD)}}]})
 
     scorer = OpenAIScorer("sk-test", "some-model", client=httpx.Client(transport=httpx.MockTransport(handler)))
     out = scorer.score(HEADLINES, COINS)
     assert seen["url"] == "https://api.openai.com/v1/chat/completions"
     assert seen["auth"] == "Bearer sk-test"
+    assert "http-referer" not in {k.lower() for k in seen["headers"]}
     assert seen["body"]["model"] == "some-model"
     assert seen["body"]["response_format"] == {"type": "json_object"}
     assert out[1][0].coin == "BTC" and out[2][0].direction == 0
     assert (scorer.provider, scorer.model) == ("openai", "some-model")
+
+
+def test_openai_scorer_uses_configured_base_url_and_openrouter_headers():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["referer"] = request.headers.get("http-referer")
+        seen["title"] = request.headers.get("x-title")
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(GOOD)}}]})
+
+    base = "https://openrouter.ai/api/v1"
+    scorer = OpenAIScorer(
+        "sk-test",
+        "openai/gpt-4o-mini",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        base_url=base,
+    )
+    out = scorer.score(HEADLINES, COINS)
+    assert seen["url"] == f"{base}/chat/completions"
+    assert seen["referer"] == "https://github.com/Pmvita/crypto-signal-bot"
+    assert seen["title"] == "crypto-signal-bot"
+    assert scorer.base_url == base
+    assert out[1][0].coin == "BTC"
+
+
+def test_build_scorer_threads_openai_base_url():
+    env = {
+        "OPENAI_API_KEY": "sk-test",
+        "OPENAI_MODEL": "openai/gpt-4o-mini",
+        "OPENAI_BASE_URL": "https://openrouter.ai/api/v1",
+    }
+    scorer, reason = build_scorer(load_settings(env))
+    assert reason is None
+    assert isinstance(scorer, OpenAIScorer)
+    assert scorer.base_url == "https://openrouter.ai/api/v1"
 
 
 def test_anthropic_scorer_sends_x_api_key_and_parses_response():

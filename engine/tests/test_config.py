@@ -11,6 +11,7 @@ def test_defaults_use_keyless_public_exchange_and_paper_values():
     assert s.fee_bps == 40 and s.slippage_bps == 5
     assert s.starting_cash == 10_000
     assert s.openai_api_key == "" and s.anthropic_api_key == ""
+    assert s.openai_base_url == "https://api.openai.com/v1"
 
 
 def test_api_host_is_loopback_and_not_configurable():
@@ -27,6 +28,7 @@ def test_env_values_override_defaults():
             "CSB_FEE_BPS": "26",
             "CSB_LLM_PROVIDER": "Anthropic",
             "ANTHROPIC_API_KEY": "  test-key  ",
+            "OPENAI_BASE_URL": "https://openrouter.ai/api/v1/",
         }
     )
     assert s.exchange == "kraken"
@@ -34,6 +36,7 @@ def test_env_values_override_defaults():
     assert s.fee_bps == 26
     assert s.llm_provider == "anthropic"
     assert s.anthropic_api_key == "test-key"
+    assert s.openai_base_url == "https://openrouter.ai/api/v1"
 
 
 def test_llm_keys_come_from_the_project_env_file_only(tmp_path):
