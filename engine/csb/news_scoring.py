@@ -101,9 +101,7 @@ def parse_scores(text: str, ids: Sequence[int], coins: Sequence[str]) -> dict[in
             continue
         seen.add((headline_id, coin))
         rationale = str(item.get("rationale") or "")[:MAX_RATIONALE_CHARS]
-        out[headline_id].append(
-            HeadlineScore(coin, (direction > 0) - (direction < 0), strength, confidence, rationale)
-        )
+        out[headline_id].append(HeadlineScore(coin, (direction > 0) - (direction < 0), strength, confidence, rationale))
     return out
 
 

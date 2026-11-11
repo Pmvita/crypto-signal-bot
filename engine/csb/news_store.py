@@ -25,9 +25,7 @@ def save_headlines(conn: sqlite3.Connection, headlines: Sequence[Headline], now_
     return conn.total_changes - before
 
 
-def record_source(
-    conn: sqlite3.Connection, feed: Feed, ok: bool, error: str | None, count: int, now_ms: int
-) -> None:
+def record_source(conn: sqlite3.Connection, feed: Feed, ok: bool, error: str | None, count: int, now_ms: int) -> None:
     conn.execute(
         """
         insert into news_sources (name, kind, url, last_attempt_at, last_ok_at, last_error, last_count)

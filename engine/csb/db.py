@@ -90,6 +90,7 @@ create table if not exists orders (
     ref_price real not null,
     status text not null,
     reject_reason text,
+    notes text not null default '[]',
     fill_price real,
     fee real,
     realized_pnl real,
