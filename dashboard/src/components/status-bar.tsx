@@ -1,12 +1,15 @@
 "use client";
 
+import { ShellEngineControls } from "@/components/shell-engine-controls";
 import { Badge } from "@/components/ui/badge";
 import { useEngine } from "@/lib/api";
+import { useElectronShell } from "@/lib/csb-shell";
 import { ago } from "@/lib/format";
 import type { Status } from "@/lib/types";
 
 export function StatusBar() {
   const { data, error } = useEngine<Status>("/api/status", 3000);
+  const electron = useElectronShell();
 
   if (error || !data) {
     return (
@@ -15,6 +18,7 @@ export function StatusBar() {
           OFFLINE
         </Badge>
         <span>Engine unreachable</span>
+        {electron ? <ShellEngineControls compact /> : null}
         <span className="ml-auto text-[var(--amber)]">Live trading: not available</span>
       </div>
     );
@@ -56,6 +60,12 @@ export function StatusBar() {
         <>
           <span className="text-border">|</span>
           <span className="text-[var(--loss)]">daily loss halt</span>
+        </>
+      ) : null}
+      {electron ? (
+        <>
+          <span className="text-border">|</span>
+          <ShellEngineControls compact />
         </>
       ) : null}
     </div>

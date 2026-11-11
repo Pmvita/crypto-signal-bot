@@ -27,6 +27,13 @@ out/
 next-env.d.ts
 npm-debug.log*
 
+# electron
+release/
+dist-electron/
+*.exe
+*.blockmap
+*.nsis.7z
+
 # os / editor
 .DS_Store
 Thumbs.db

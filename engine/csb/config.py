@@ -9,12 +9,22 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
 # The API controls trading, so it listens on loopback only. Not configurable in phase 1.
 API_HOST = "127.0.0.1"
 
 LLM_PROVIDERS = ("openai", "anthropic")
+
+
+def resolve_project_root(process_env: Mapping[str, str] | None = None) -> Path:
+    """Repo root in CLI/dev; Electron packaged mode may set CSB_PROJECT_ROOT to AppData."""
+    env = process_env if process_env is not None else os.environ
+    override = (env.get("CSB_PROJECT_ROOT") or "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    return Path(__file__).resolve().parents[2]
+
+
+PROJECT_ROOT = resolve_project_root()
 
 
 @dataclass(frozen=True)
@@ -55,7 +65,8 @@ def project_env(root: Path, process_env: Mapping[str, str]) -> dict[str, str]:
 
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     """Build settings. With env=None, read PROJECT_ROOT/.env (see `project_env`)."""
-    source = project_env(PROJECT_ROOT, os.environ) if env is None else env
+    root = resolve_project_root(os.environ if env is None else env)
+    source = project_env(root, os.environ) if env is None else env
 
     def get(name: str, default: str) -> str:
         value = source.get(name, "")
@@ -63,7 +74,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
 
     db_path = Path(get("CSB_DB_PATH", "data/csb.sqlite3"))
     if not db_path.is_absolute():
-        db_path = PROJECT_ROOT / db_path
+        db_path = root / db_path
 
     symbols = tuple(s.strip().upper() for s in get("CSB_SYMBOLS", "BTC/USD,ETH/USD,SOL/USD").split(",") if s.strip())
     provider = get("CSB_LLM_PROVIDER", "openai").lower()

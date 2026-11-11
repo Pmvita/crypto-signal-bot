@@ -8,9 +8,56 @@ Local **paper-trading** crypto signal bot: public market data via [ccxt](https:/
 
 **License:** proprietary / all rights reserved (see `LICENSE`)
 
-## Desktop app (planned)
+## Desktop app (preferred daily path)
 
-A Windows Electron shell (engine start/stop, backfill from the UI, packaged installer) is **planned, not shipped**. Design draft for approval: [`docs/superpowers/specs/2026-11-11-electron-shell-design.md`](docs/superpowers/specs/2026-11-11-electron-shell-design.md). Until that lands, use the Quick start below (`csb serve` + `npm run dev`).
+Windows Electron shell wraps the engine + desk: Start/Stop engine, Run backfill, Settings **Check for updates** (git pull for local checkouts), and first-run Python venv setup.
+
+**Status:** works for local `desktop:dev` on this machine (Option A desk host: Electron spawns `next dev` / reuses `:3000`). Packaged NSIS/portable scripts exist (`npm run desktop:dist:win`) but are **partial** — system Python 3.12+ required; signed Release installers not shipped yet.
+
+Design: [`docs/superpowers/specs/2026-11-11-electron-shell-design.md`](docs/superpowers/specs/2026-11-11-electron-shell-design.md).
+
+### Run the desktop app
+
+If the project path contains `)`, use the junction (recommended on this machine):
+
+```powershell
+# one-time (from junction or repo)
+cd C:\Users\user\Desktop\csb-build
+npm install
+cd dashboard; npm ci; cd ..
+
+# daily
+npm run desktop:dev
+```
+
+That starts Electron, ensures AppData `.venv` + `.env`, starts the desk on `127.0.0.1:3000`, and starts `csb serve` on `127.0.0.1:8787`.
+
+| Mode | Data / `.env` / venv |
+|---|---|
+| Desktop (`desktop:dev` or packaged) | `%APPDATA%\Crypto Signal Bot\` (path of truth for secrets + DB) |
+| CLI without Electron | Repo root (`.env`, `data/`, `.venv`) |
+
+**LLM / OpenRouter key:** set it in Settings inside the desktop app (masked in UI). It persists in AppData `.env` across close/reopen; saving restarts the engine. Never commit keys.
+
+### Check for updates (Settings)
+
+For the **local git checkout / test loop** only:
+
+1. Settings → **Check for updates** fetches `origin/main` on `Pmvita/crypto-signal-bot`.
+2. If newer commits exist and the working tree is **clean**, **Apply update** runs `git pull --ff-only`.
+3. Dirty trees are refused (no force, no secret commits).
+4. Packaged installs without `.git` cannot self-update via git — the UI says so and can open GitHub Releases.
+
+Never overwrites `.env`.
+
+### Windows package script (partial)
+
+```powershell
+cd C:\Users\user\Desktop\csb-build
+npm run desktop:dist:win
+```
+
+Artifacts land under `release/` (gitignored). Prefer Releases download for end users once published; use git Check for updates while developing.
 
 ## Status
 
@@ -22,6 +69,7 @@ Phase 1 works end-to-end on this machine (verified 2026-11-10 / 2026-11-11):
 - Dashboard desk / signals / news / backtest / settings with real API data
 - Kill switch engage/disengage via API; daily-loss halt covered by unit tests
 - Engine: `pytest` + `ruff`; dashboard: `typecheck` + `lint` + `build`
+- Desktop: `npm run desktop:test` (update helpers); `desktop:dev` for the shell
 
 Screenshots: [`docs/screenshots/`](docs/screenshots/)
 
@@ -76,9 +124,9 @@ OPENAI_MODEL=openai/gpt-4o-mini
 
 Copy names from `.env.example`; put real keys only in your local `.env`.
 
-## Quick start (Windows)
+## CLI quick start (power users / CI)
 
-Python 3.12+ and Node 22+ recommended. If the project path contains `)`, use a short junction for npm (this repo was verified via `C:\Users\user\Desktop\csb-build`).
+Python 3.12+ and Node 22+ recommended. Prefer the [Desktop app](#desktop-app-preferred-daily-path) for daily use. If the project path contains `)`, use junction `C:\Users\user\Desktop\csb-build`.
 
 ```powershell
 # one-time
@@ -108,7 +156,7 @@ npm run dev    # http://127.0.0.1:3000
 | Paper broker with fees/slippage | Shorting / leverage / derivatives |
 | RSS ingest + optional LLM scores | News overlay in the backtester |
 | Risk limits, kill switch, daily halt | Remote / non-loopback API access |
-| Local dashboard | Hosted public demo URL |
+| Local dashboard + Electron shell (dev) | Hosted public demo URL; signed installer (not yet) |
 
 ## Tests
 
@@ -117,18 +165,21 @@ $env:PYTHONPATH = "$PWD\engine"
 .\.venv\Scripts\python.exe -m pytest engine
 .\.venv\Scripts\python.exe -m ruff check engine\csb engine\tests
 cd dashboard; npm run typecheck; npm run lint; npm run build
+npm run desktop:test
 ```
 
-CI: GitHub Actions workflow at [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (engine + dashboard jobs).
+CI: GitHub Actions workflow at [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (engine + dashboard + desktop unit tests).
 
 ## Layout
 
 ```
 crypto-signal-bot/
+├── desktop/             Electron main / preload / lifecycle / updates
 ├── engine/csb/          FastAPI + trading loop + backtester
 ├── dashboard/           Next.js desk (App Router)
 ├── docs/                Spec, plan, screenshots
 ├── data/                Local SQLite (gitignored)
+├── package.json         Electron + builder scripts
 └── .env.example         Config names only
 ```
 

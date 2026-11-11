@@ -1,0 +1,110 @@
+{
+  "name": "crypto-signal-bot",
+  "version": "0.1.0",
+  "description": "Windows Electron desk for local paper-trading crypto signals (phase 1)",
+  "license": "UNLICENSED",
+  "private": false,
+  "author": "Pmvita",
+  "main": "desktop/main.cjs",
+  "scripts": {
+    "desktop": "electron .",
+    "desktop:dev": "electron .",
+    "desktop:test": "node --test desktop/tests/*.test.cjs",
+    "desktop:dist": "electron-builder --publish never",
+    "desktop:dist:win": "electron-builder --win --publish never",
+    "desktop:pack": "electron-builder --dir --publish never"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Pmvita/crypto-signal-bot.git"
+  },
+  "keywords": [
+    "crypto",
+    "paper-trading",
+    "electron",
+    "signals"
+  ],
+  "build": {
+    "appId": "com.pmvita.crypto-signal-bot",
+    "productName": "Crypto Signal Bot",
+    "copyright": "Copyright © Pmvita. All Rights Reserved.",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "desktop/**/*",
+      "package.json",
+      "!desktop/tests/**/*",
+      "!**/*.test.cjs"
+    ],
+    "extraResources": [
+      {
+        "from": "engine",
+        "to": "engine",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc",
+          "!**/.pytest_cache/**",
+          "!**/.ruff_cache/**"
+        ]
+      },
+      {
+        "from": "dashboard",
+        "to": "dashboard",
+        "filter": [
+          "**/*",
+          "!**/node_modules/**",
+          "!**/.next/cache/**"
+        ]
+      },
+      {
+        "from": ".env.example",
+        "to": ".env.example"
+      },
+      {
+        "from": "LICENSE",
+        "to": "LICENSE"
+      }
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "desktop/**/*"
+    ],
+    "npmRebuild": false,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-win-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
+}

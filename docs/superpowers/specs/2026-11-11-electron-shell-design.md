@@ -1,20 +1,20 @@
 # Crypto Signal Bot — Electron Desktop Shell Design
 
 Date: 2026-11-11  
-Status: **draft — awaiting user approval** (do not implement until approved)  
+Status: **approved — implementing**  
 Related: [phase 1 design](./2026-11-10-crypto-signal-bot-design.md), reference product `solana-sniper-bot` (architectural ideas only; no proprietary code copy)
 
 ## 1. Goal / non-goals
 
 ### Goal
 
-Ship a **Windows-first Electron desktop app** so the user runs paper trading without juggling terminals and CLI commands. One install (or one `npm run desktop` for developers) starts the desk, starts/stops the Python engine, and exposes first-class actions that today require CLI (`backfill`, engine start).
+Ship a **Windows-first Electron desktop app** so the user runs paper trading without juggling terminals and CLI commands. One install (or one `npm run desktop:dev` for developers) starts the desk, starts/stops the Python engine, and exposes first-class actions that today require CLI (`backfill`, engine start).
 
 The shell wraps the existing phase-1 product:
 
 - FastAPI paper engine on `127.0.0.1:8787` (trading loop, risk, kill switch, backtest API)
 - Existing Next.js desk UI (desk / signals / trades / news / backtest / settings)
-- Local `.env` for secrets; SQLite under `data/`
+- Local `.env` for secrets; SQLite under `data/` (or AppData when packaged)
 
 ### Non-goals (this shell pass)
 
@@ -42,63 +42,66 @@ Electron adds a **main process** that owns lifecycle; the desk remains the UI su
 
 | Option | How UI loads | Child processes | Packaging | Notes |
 |---|---|---|---|---|
-| **A. Dual server** | BrowserWindow → `http://127.0.0.1:3000` with full `next start` | Python + Node (Next) | Ship Node runtime or Next standalone + Python | Least UI change; heaviest runtime (two servers + Electron) |
+| **A. Dual server** | BrowserWindow → `http://127.0.0.1:3000` with full `next start` / `next dev` | Python + Node (Next) | Ship Node runtime or Next standalone + Python | Least UI change; heaviest runtime (two servers + Electron) |
 | **B. Static desk host (recommended)** | Build Next as static export; Electron main serves files on `127.0.0.1:3000` via a tiny loopback static server; Window loads that URL | Python only (+ Electron) | Ship static `out/` + engine + Python strategy | Keeps existing `ENGINE_URL` / CORS (`localhost:3000`); no Next server in production |
 | **C. Engine-hosted UI** | Static export mounted by FastAPI; Window → `http://127.0.0.1:8787` | Python only | Couple dashboard build into engine packaging | Simplest Electron; couples UI deploy to API process; CORS/origin changes |
 
-### Recommendation: **Option B — Electron main + static desk host + Python engine child**
+### Decision: **Option B preferred; Option A fallback is approved**
 
-**Why:** The desk is already client-side (SWR → `http://127.0.0.1:8787`). Production does not need a Next server if we static-export the App Router app (or an equivalent client build). Serving that export from Electron main on **127.0.0.1:3000** preserves today’s CORS allowlist and `NEXT_PUBLIC_ENGINE_URL` defaults. Main only has to manage **one** meaningful child (Python), which matches the solana-sniper pattern of “main owns the bot process.” Option A is the fallback if static export proves incompatible with current Next 16 flags (`cacheComponents` / turbopack CSS). Option C is a later optimization if we want a single port.
+Ship toward Option B (static export + loopback host). If Next 16 flags (`cacheComponents` / turbopack CSS) break static export, **Option A** (spawn `next dev` in desktop:dev, `next start` / standalone when packaged) is explicitly OK for v1. Implementation may land on A first if B blocks the pass.
 
-**Dev mode:** Main may spawn `next dev` (or expect it) and still spawn `csb serve`, so the existing dashboard DX stays available during shell development.
+**Dev mode:** Main may spawn `next dev` (or reuse an already-running desk on `:3000`) and still spawn `csb serve`.
 
-**IPC surface (preload, contextIsolation, no nodeIntegration):** e.g. `csb.engine.start|stop|status`, `csb.jobs.backfill`, `csb.setup.getState` — renderer never sees API keys or raw `.env` contents.
+**IPC surface (preload, contextIsolation, no nodeIntegration):** e.g. `csb.engine.start|stop|status`, `csb.jobs.backfill`, `csb.setup.getState`, `csb.updates.check|apply` — renderer never sees API keys or raw `.env` contents.
 
 ```
 ┌──────────────────── Electron main ────────────────────┐
-│  static host :3000 (prod) │ spawn/stop Python engine   │
-│  IPC ← preload ← renderer │ graceful shutdown hooks    │
+│  desk :3000 (next or static) │ spawn/stop Python engine │
+│  IPC ← preload ← renderer    │ graceful shutdown hooks  │
+│  Check for updates (git)     │ first-run venv setup     │
 └─────────────┬─────────────────────────┬───────────────┘
               │ loadURL                 │ child_process
               ▼                         ▼
-     Desk (static / next)        python -m csb serve
+     Desk (Next / static)        python -m csb serve
                                  (+ backfill subprocess)
 ```
 
-## 3. Process lifecycle
+## 3. Locked product decisions
 
-### First launch / setup
-
-1. Resolve **app root** (dev: repo root; packaged: `app.asar.unpacked` or equivalent so Python and data are writable outside asar — same idea as sniper’s `getAppRoot`).
-2. Ensure **user data / project data paths**:
-   - Prefer packaged installs writing SQLite + `.env` under Electron `userData` (e.g. `%APPDATA%/Crypto Signal Bot/`), with `CSB_DB_PATH` pointing there.
-   - Dev continues to use repo-root `.env` and `data/csb.sqlite3` (current `config.PROJECT_ROOT` behavior).
-3. If `.env` missing: copy from `.env.example` (names only); surface a short Settings/setup pane (“optional LLM keys”). Never invent keys.
-4. **Python runtime (decision — see open questions):**
-   - **Path A (recommended default for v1):** require a local Python 3.12+ on PATH (or configured path); create/reuse a venv under `userData` or repo `.venv`; `pip install -r engine/requirements.txt` on first run / version bump.
-   - **Path B (better end-user UX, larger artifact):** ship Windows embeddable Python + preinstalled deps inside the installer (`extraResources`), no system Python required.
-5. Auto-start engine after setup succeeds (health-check `GET /api/status`).
-6. Paren-path builds: keep using junction `C:\Users\user\Desktop\csb-build` for npm/electron-builder when the real path contains `)`.
-
-### `.env` location
-
-| Mode | Location | Rules |
+| # | Topic | Decision |
 |---|---|---|
-| Dev | `<repo>/.env` | gitignored; keys only from project `.env` (existing `project_env` behavior) |
-| Packaged | `<userData>/.env` | created from example; never shipped in the installer payload with secrets |
+| 1 | Python runtime | **System Python 3.12+** + first-run venv (not bundled embeddable Python in this pass) |
+| 2 | Packaged data / config / DB / `.env` | **`%APPDATA%\Crypto Signal Bot\`** (Electron `userData`) |
+| 3 | Static export failure | **Option A fallback OK** |
+| 4 | Product name / appId | **`Crypto Signal Bot`** / **`com.pmvita.crypto-signal-bot`** |
 
-Main sets cwd / env so `csb` resolves the correct root (may need a small, approved config tweak later: `CSB_PROJECT_ROOT` or pass env only for packaged mode — call out in implementation; do not change secrets-from-shell rules).
+### Path layout
+
+| Mode | Code root | `.env` / SQLite / venv |
+|---|---|---|
+| **Desktop** (`desktop:dev` or packaged Electron) | Repo / install resources | **Always** `%APPDATA%\Crypto Signal Bot\`: `.env`, `data\`, `.venv` |
+| **CLI** (no Electron) | Repo root | Repo: `.env`, `data/csb.sqlite3`, `.venv` |
+
+Desktop path of truth for secrets and DB is AppData (app name `Crypto Signal Bot`). CLI without Electron keeps reading the project `.env`. Main sets `CSB_PROJECT_ROOT` + absolute `CSB_DB_PATH` for the engine child. `PYTHONPATH` always points at the **code** `engine/` directory.
+
+First-run (desktop): detect system Python → create AppData venv → `pip install -r engine/requirements.txt` → seed AppData `.env` from project `.env` (local machine only) or `.env.example` placeholders — never into git.
+
+### Settings: LLM / OpenRouter API key
+
+Settings UI (Electron only) edits AppData `.env` fields: `CSB_LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, plus Anthropic equivalents. Keys are **masked** in the renderer (last 4 chars). Save writes AppData `.env` via main-process IPC (never commits, never logs full secrets) and **restarts the engine child** so news scoring reloads config.
+
+Paren-path builds: use junction `C:\Users\user\Desktop\csb-build`.
 
 ### Auto-start / stop
 
-- **On ready:** create window → start static host (prod) → start engine child (`python -m csb serve` with `PYTHONPATH=engine`).
+- **On ready:** create window → ensure desk on `:3000` → start engine child (`python -m csb serve` with `PYTHONPATH=engine`).
 - **Health:** poll `/api/status` from main; push status to renderer via IPC for Start/Stop chrome.
-- **Graceful shutdown:** on `before-quit` / `window-all-closed`: SIGTERM/terminate uvicorn child; wait briefly; force-kill if needed (mirror sniper `stopBotProcess` discipline). Stop static host. Do not leave orphan Python on 8787.
+- **Graceful shutdown:** on `before-quit` / `window-all-closed`: terminate uvicorn child; wait briefly; force-kill if needed. Stop desk child if main spawned it. Do not leave orphan Python on 8787.
 - **Crash:** if engine exits unexpectedly, mark status offline in UI; offer Restart (do not silently restart forever).
 
 ### Backfill
 
-Today backfill is **CLI-only** (`python -m csb backfill`). Shell v1: main spawns that command as a **job subprocess** (stdout → IPC log / progress), not a second long-lived server. Optional later: `POST /api/backfill` with job status — not required to approve the shell.
+Shell v1: main spawns `csb backfill` as a **job subprocess** (stdout → IPC log / progress). Optional later: `POST /api/backfill`.
 
 ## 4. UI additions the shell enables
 
@@ -109,78 +112,79 @@ Keep existing desk features (wired today):
 - Run backtest (`POST /api/backtests`)
 - Live-trading-unavailable notice
 
-Add **shell chrome** (minimal; can live in StatusBar / Settings / a thin Electron menu):
+Add **shell chrome** (StatusBar / Settings; not a second dashboard):
 
 | Control | Behavior |
 |---|---|
 | **Engine Start / Stop** | IPC → main spawn/kill `csb serve`; status badge online/offline |
-| **Run backfill** | IPC → main runs `csb backfill` (days from settings/default); progress/log; disable while running |
-| **Engine status** | Port, PID/running flag, last heartbeat from `/api/status` — no CLI required |
-| **Open data folder / Open .env location** | Optional convenience via `shell.openPath` |
-| Offline copy | Replace “start with `python -m csb serve`” with “Start engine” when running inside Electron |
+| **Run backfill** | IPC → main runs `csb backfill`; progress/log; disable while running |
+| **Engine status** | Port, PID/running flag, last heartbeat from `/api/status` |
+| **Open data folder / Open .env location** | `shell.openPath` convenience |
+| **Check for updates** | See §5 — local git test loop |
+| Offline copy | Prefer “Start engine” when running inside Electron |
 
-Do not turn the first viewport into a second dashboard; shell controls stay in the existing status/settings areas.
+## 5. Check for updates (Settings) — local test loop
 
-## 5. Packaging
+Explicitly for the user’s **local checkout / development test loop**, not a substitute for signed Release installers.
+
+| Context | Behavior |
+|---|---|
+| **Git working tree** (dev / checkout build) | Prefer `git fetch` + compare local `HEAD` to `origin/main`. If newer commits exist, `git pull --ff-only origin main` when the working tree is **clean**. Surface progress/errors in Settings. After success, say whether restart is required; offer/restart engine (and Electron if main/preload changed). |
+| **Dirty working tree** | **Refuse** with a clear message — never destroy local changes, never force-push, never commit secrets. |
+| **Packaged install (no `.git`)** | Explain that git self-update is only for development/checkout builds; optionally open GitHub Releases. Do **not** pretend `git pull` works on an NSIS install. |
+| **API fallback** | If not a git tree but network is available, may query GitHub `commits/main` (or `gh`) for informational “newer exists” only — apply still requires a git checkout. |
+
+Never overwrite or upload `.env`. Never stage/commit secrets.
+
+## 6. Packaging
 
 | Item | Plan |
 |---|---|
-| Tooling | `electron` + `electron-builder` (same family as sniper); root or `desktop/` package entry |
+| Tooling | `electron` + `electron-builder` at repo root; `desktop/` main + preload |
 | Windows first | NSIS installer x64 + optional portable exe |
 | Artifacts | GitHub Releases (`Pmvita/crypto-signal-bot`), proprietary LICENSE unchanged |
-| UI payload | `dashboard` static export (`out/`) as `extraResources` or unpacked files |
+| UI payload | Dashboard build (static `out/` if Option B, else Next standalone / `.next` for Option A) |
 | Engine payload | `engine/csb`, `requirements.txt`, `.env.example` — **not** `.venv`, **not** `.env`, **not** `data/*.sqlite3` |
-| Python | Per open question: system Python + first-run venv **or** bundled embeddable runtime |
-| Build path | Prefer junction `C:\Users\user\Desktop\csb-build` if paren path hangs npm |
+| Python | System 3.12+ + first-run venv under AppData (packaged) or repo `.venv` (dev) |
+| Build path | Junction `C:\Users\user\Desktop\csb-build` when paren path hangs npm |
 | Icons | Distinct CSB icon later; placeholder acceptable for first internal dist |
-| CI | Optional follow-up: tag `v*` → Windows artifact (sniper-like); not blocking design approval |
+| CI | Unit-test update helpers; full Electron E2E not required in CI |
 
-`asarUnpack` (or `extraResources`) must leave Python-invoked files on a real filesystem path.
+`asarUnpack` / `extraResources` must leave Python-invoked files on a real filesystem path.
 
-## 6. Security
+## 7. Security
 
 - Engine remains **127.0.0.1 only** (`API_HOST` fixed); TrustedHostMiddleware stays.
-- Desk static host binds **127.0.0.1:3000** only (not `0.0.0.0`).
+- Desk binds **127.0.0.1:3000** only (not `0.0.0.0`).
 - Preload: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true` where compatible.
 - Secrets stay in local `.env` / userData; never in repo, never baked into release zips, never sent to renderer IPC.
-- LLM keys continue to be read from the project/userData `.env` only (existing rule: do not inherit random shell `OPENAI_API_KEY`).
+- LLM keys continue to be read from the project/userData `.env` only.
 - No live-trading credentials or wallet flows in this pass.
-- CORS: keep localhost:3000 allowlist; if static host uses that origin, no widening required. Do not enable `webSecurity: false` as the primary fix.
+- CORS: keep localhost:3000 allowlist. Do not enable `webSecurity: false` as the primary fix.
 
-## 7. Migration path from current workflow
+## 8. Migration path
 
 | Today | After shell (dev) | After shell (end user) |
 |---|---|---|
-| Terminal A: `python -m csb serve` | `npm run desktop` (main starts engine) | Install from GitHub Release → open app |
-| Terminal B: `npm run dev` | Main loads Next dev or static host | Static desk inside app |
+| Terminal A: `python -m csb serve` | `npm run desktop:dev` (main starts engine + desk) | Install from GitHub Release → open app |
+| Terminal B: `npm run dev` | Main loads/spawns desk | Desk inside app |
 | `python -m csb backfill` | UI **Run backfill** | Same |
-| `python -m csb backtest` / desk button | Desk button unchanged | Same |
 | Kill switch / risk | Unchanged via API | Unchanged |
+| Manual `git pull` | Settings **Check for updates** (checkout builds) | Releases page (packaged) |
 
-CLI remains supported for power users and CI (`pytest`, `ruff`, backfill/backtest scripts). The desktop app is the **preferred** path, not the only path.
+CLI remains supported for power users and CI. The desktop app is the **preferred** daily path.
 
-Developer docs stay accurate: README “Quick start” keeps the two-terminal flow; a short **Desktop app (planned)** section points here until the app ships.
+## 9. Implementation phases
 
-## 8. Implementation phases
-
-Ordered, small steps (approve design → then implement):
-
-1. **Scaffold** `desktop/` (main, preload, package scripts) without packaging; Window loads existing `http://127.0.0.1:3000` while user still runs Next manually — prove IPC status only.
-2. **Engine lifecycle** — main spawns/stops `csb serve`; health + Start/Stop in UI; graceful quit.
-3. **Backfill job** — IPC → CLI subprocess + progress UI.
-4. **Static export** — enable Next `output: 'export'` (or fallback Option A standalone); main static host on :3000; fix any App Router/export breakages.
-5. **First-run setup** — `.env` seed, Python/venv check, clear errors if missing.
-6. **electron-builder Windows** — NSIS + portable; exclude secrets; smoke on a clean machine / junction build path.
-7. **GitHub Release** — attach artifacts; README download section with **planned → available** language only when real.
-8. **Optional** — bundled Python; `POST /api/backfill`; macOS later.
-
-## 9. Open questions (for user)
-
-1. **Python in the installer:** require system Python 3.12+ (smaller release, setup step) **or** bundle embeddable Python (larger download, one-click)? Recommendation if undecided: **system Python for first desktop slice**, bundle later.
-2. **Data directory in packaged app:** keep files next to the install, or always under `%APPDATA%/Crypto Signal Bot/`? Recommendation: **userData**.
-3. **If Next static export fights current Next 16 config**, OK to fall back to Option A (spawn `next start` / standalone) for v1?
-4. **Product name string** for installer / `appId` (e.g. `Crypto Signal Bot` / `com.pmvita.crypto-signal-bot`) — confirm or rename.
+1. Scaffold `desktop/` + root package scripts; Window loads `http://127.0.0.1:3000`.
+2. Engine lifecycle — spawn/stop, health, Start/Stop UI, graceful quit.
+3. Backfill job — IPC → CLI subprocess + progress UI.
+4. Desk host — Option B static if feasible; else Option A `next` child.
+5. First-run setup — `.env` seed, Python/venv check.
+6. **Check for updates** — git helpers + Settings UI + unit tests.
+7. electron-builder Windows scripts; Release artifacts when ready.
+8. Optional later — bundled Python; `POST /api/backfill`; macOS.
 
 ---
 
-**Approval gate:** no Electron implementation until this spec is explicitly approved (with answers to §9 where they affect packaging).
+**Approval:** locked by user answers on 2026-11-11 (Python system+venv, AppData paths, Option A fallback OK, product name/appId as above) plus Check-for-updates requirement for the local test loop.

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from csb.config import API_HOST, PROJECT_ROOT, load_settings, project_env
+from csb.config import API_HOST, PROJECT_ROOT, load_settings, project_env, resolve_project_root
 
 
 def test_defaults_use_keyless_public_exchange_and_paper_values():
@@ -57,3 +57,10 @@ def test_relative_db_path_is_resolved_inside_the_project():
     s = load_settings({"CSB_DB_PATH": "data/x.sqlite3"})
     assert s.db_path == PROJECT_ROOT / "data" / "x.sqlite3"
     assert isinstance(s.db_path, Path)
+
+
+def test_csb_project_root_override_relocates_relative_db(tmp_path, monkeypatch):
+    monkeypatch.setenv("CSB_PROJECT_ROOT", str(tmp_path))
+    s = load_settings({"CSB_DB_PATH": "data/x.sqlite3", "CSB_PROJECT_ROOT": str(tmp_path)})
+    assert s.db_path == tmp_path / "data" / "x.sqlite3"
+    assert resolve_project_root({"CSB_PROJECT_ROOT": str(tmp_path)}) == tmp_path.resolve()
