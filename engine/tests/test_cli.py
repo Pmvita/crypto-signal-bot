@@ -7,8 +7,8 @@ from csb.models import Candle
 T0 = 1_700_000_000_000
 
 
-def _hourly(n: int = 900) -> list[Candle]:
-    """Enough 1h bars (~900 ≈ 37 days) for EMA200 on 4h bars after aggregation."""
+def _hourly(n: int = 1400) -> list[Candle]:
+    """Enough 1h bars (~1400 ≈ 58 days) for EMA200 warm-up plus tradeable 4h headroom."""
     out = []
     price = 100.0
     for i in range(n):

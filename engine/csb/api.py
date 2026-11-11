@@ -19,7 +19,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from csb.candles import BASE_TIMEFRAME, SIGNAL_HOURS, aggregate, load_candles
 from csb.config import API_HOST, Settings
 from csb.db import connect, init_schema, now_ms
-from csb.jobs import run_stored_backtest
+from csb.jobs import candle_history_summary, run_backfill, run_stored_backtest
 from csb.marketdata import MarketData, create_exchange
 from csb.news_scoring import build_scorer
 from csb.portfolio import load_portfolio
@@ -40,6 +40,10 @@ class RiskUpdate(BaseModel):
 
 class KillSwitchBody(BaseModel):
     engaged: bool
+
+
+class BackfillBody(BaseModel):
+    days: int | None = Field(None, ge=1, le=3000)
 
 
 def default_service_factory(settings: Settings, conn: Any) -> TradingService:
@@ -394,6 +398,36 @@ def create_app(
             "result": result,
             "news_included": bool(result.get("news_included", False)),
         }
+
+    backfill_lock = threading.Lock()
+
+    @app.get("/api/candles/summary")
+    def candles_summary() -> dict[str, Any]:
+        conn = open_conn()
+        try:
+            return candle_history_summary(settings, conn)
+        finally:
+            conn.close()
+
+    @app.post("/api/backfill")
+    def backfill_run(body: BackfillBody | None = None) -> dict[str, Any]:
+        payload = body or BackfillBody()
+        if not backfill_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail="Backfill already running. Wait for it to finish.")
+        conn = open_conn()
+        try:
+            try:
+                return run_backfill(settings, conn, payload.days)
+            except RuntimeError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Backfill failed: {type(exc).__name__}: {exc}",
+                ) from exc
+        finally:
+            conn.close()
+            backfill_lock.release()
 
     @app.get("/api/backtests/latest")
     def backtests_latest() -> dict[str, Any] | None:

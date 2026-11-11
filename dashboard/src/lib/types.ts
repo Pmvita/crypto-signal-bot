@@ -202,3 +202,21 @@ export interface BacktestRun {
   result: BacktestResult;
   news_included: boolean;
 }
+
+export interface CandleSymbolSummary {
+  symbol: string;
+  hourly_candles: number;
+  signal_bars: number;
+  oldest_ts: number | null;
+  newest_ts: number | null;
+}
+
+export interface CandleHistorySummary {
+  exchange: string;
+  symbols: CandleSymbolSummary[];
+  max_signal_bars: number;
+  required_signal_bars: number;
+  ready_for_backtest: boolean;
+  backfill_days_default: number;
+  message: string | null;
+}

@@ -106,3 +106,21 @@ def test_news_endpoint_marks_headlines_unscored(client):
 def test_backtest_latest_is_null_before_any_run(client):
     c, _, _ = client
     assert c.get("/api/backtests/latest").json() is None
+
+
+def test_candles_summary_reports_not_ready_without_history(client):
+    c, _, _ = client
+    body = c.get("/api/candles/summary").json()
+    assert body["ready_for_backtest"] is False
+    assert body["max_signal_bars"] == 0
+    assert body["required_signal_bars"] >= 200
+    assert "backfill" in (body["message"] or "").lower()
+
+
+def test_backtest_run_rejects_missing_candles_with_actionable_detail(client):
+    c, _, _ = client
+    res = c.post("/api/backtests")
+    assert res.status_code == 400
+    detail = res.json()["detail"].lower()
+    assert "candle" in detail
+    assert "backfill" in detail
