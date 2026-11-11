@@ -1,0 +1,21 @@
+[project]
+name = "crypto-signal-bot-engine"
+version = "0.1.0"
+description = "Paper-trading crypto bot engine: market data, news scoring, strategy, backtester, risk limits and a local API."
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+# PLC0415 = import outside top level; the workspace rule is "imports at the top of the module".
+select = ["E", "F", "I", "B", "UP", "PLC0415"]
+preview = true
+explicit-preview-rules = true
+extend-select = ["PLC0415"]
