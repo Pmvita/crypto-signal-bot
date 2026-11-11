@@ -14,8 +14,8 @@ Get Windows installers from **[GitHub Releases](https://github.com/Pmvita/crypto
 
 | File | What it is |
 |---|---|
-| `Crypto Signal Bot-*-Windows-x64.exe` | NSIS installer (recommended) |
-| `Crypto Signal Bot-*-Windows-x64-portable.exe` | Portable exe (no install) |
+| [`Crypto.Signal.Bot-0.1.0-Windows-x64.exe`](https://github.com/Pmvita/crypto-signal-bot/releases/download/v0.1.0/Crypto.Signal.Bot-0.1.0-Windows-x64.exe) | NSIS installer (recommended) |
+| [`Crypto.Signal.Bot-0.1.0-Windows-x64-portable.exe`](https://github.com/Pmvita/crypto-signal-bot/releases/download/v0.1.0/Crypto.Signal.Bot-0.1.0-Windows-x64-portable.exe) | Portable exe (no install) |
 
 **Requirements:** Windows x64, **Python 3.12+** on PATH (first run creates a venv under AppData). Phase 1 is **paper trading only** — no live exchange orders.
 
