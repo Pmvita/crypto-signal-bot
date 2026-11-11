@@ -22,6 +22,7 @@ data/
 # node / next
 node_modules/
 .next/
+.next-pack/
 out/
 *.tsbuildinfo
 next-env.d.ts
@@ -29,6 +30,7 @@ npm-debug.log*
 
 # electron
 release/
+packaging/
 dist-electron/
 *.exe
 *.blockmap

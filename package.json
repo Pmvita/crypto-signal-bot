@@ -10,9 +10,10 @@
     "desktop": "electron .",
     "desktop:dev": "electron .",
     "desktop:test": "node --test desktop/tests/*.test.cjs",
-    "desktop:dist": "electron-builder --publish never",
-    "desktop:dist:win": "electron-builder --win --publish never",
-    "desktop:pack": "electron-builder --dir --publish never"
+    "desktop:predist": "node scripts/desktop-predist.cjs",
+    "desktop:dist": "node scripts/desktop-dist-win.cjs",
+    "desktop:dist:win": "node scripts/desktop-dist-win.cjs",
+    "desktop:pack": "npm run desktop:predist && electron-builder --dir --publish never"
   },
   "devDependencies": {
     "electron": "^33.2.0",
@@ -58,13 +59,8 @@
         ]
       },
       {
-        "from": "dashboard",
-        "to": "dashboard",
-        "filter": [
-          "**/*",
-          "!**/node_modules/**",
-          "!**/.next/cache/**"
-        ]
+        "from": "packaging/dashboard",
+        "to": "dashboard"
       },
       {
         "from": ".env.example",
@@ -95,13 +91,16 @@
           ]
         }
       ],
-      "artifactName": "${productName}-${version}-win-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-Windows-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-Windows-${arch}-portable.${ext}"
     }
   },
   "allowScripts": {

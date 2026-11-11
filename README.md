@@ -8,15 +8,30 @@ Local **paper-trading** crypto signal bot: public market data via [ccxt](https:/
 
 **License:** proprietary / all rights reserved (see `LICENSE`)
 
+## Download (end users — no npm)
+
+Get Windows installers from **[GitHub Releases](https://github.com/Pmvita/crypto-signal-bot/releases)** (latest: [v0.1.0](https://github.com/Pmvita/crypto-signal-bot/releases/tag/v0.1.0)):
+
+| File | What it is |
+|---|---|
+| `Crypto Signal Bot-*-Windows-x64.exe` | NSIS installer (recommended) |
+| `Crypto Signal Bot-*-Windows-x64-portable.exe` | Portable exe (no install) |
+
+**Requirements:** Windows x64, **Python 3.12+** on PATH (first run creates a venv under AppData). Phase 1 is **paper trading only** — no live exchange orders.
+
+**Config / secrets:** `%APPDATA%\Crypto Signal Bot\` (`.env`, SQLite, `.venv`). Put LLM / OpenRouter API keys in **Settings** inside the app (never commit `.env`).
+
+**Code signing:** builds are **unsigned** (no Authenticode cert on the build machine). Windows SmartScreen may warn on first open — use More info → Run anyway when you trust the GitHub Release asset. Default Electron icon until a custom CSB icon ships.
+
+**License:** proprietary / all rights reserved (`LICENSE`).
+
 ## Desktop app (preferred daily path)
 
 Windows Electron shell wraps the engine + desk: Start/Stop engine, Run backfill, Settings **Check for updates** (git pull for local checkouts), and first-run Python venv setup.
 
-**Status:** works for local `desktop:dev` on this machine (Option A desk host: Electron spawns `next dev` / reuses `:3000`). Packaged NSIS/portable scripts exist (`npm run desktop:dist:win`) but are **partial** — system Python 3.12+ required; signed Release installers not shipped yet.
-
 Design: [`docs/superpowers/specs/2026-11-11-electron-shell-design.md`](docs/superpowers/specs/2026-11-11-electron-shell-design.md).
 
-### Run the desktop app
+### Run from source (developers)
 
 If the project path contains `)`, use the junction (recommended on this machine):
 
@@ -50,14 +65,14 @@ For the **local git checkout / test loop** only:
 
 Never overwrites `.env`.
 
-### Windows package script (partial)
+### Build Windows installers (maintainers)
 
 ```powershell
 cd C:\Users\user\Desktop\csb-build
 npm run desktop:dist:win
 ```
 
-Artifacts land under `release/` (gitignored). Prefer Releases download for end users once published; use git Check for updates while developing.
+Builds a Next.js standalone desk into `packaging/` (gitignored), then NSIS + portable under `release/` (gitignored). Unsigned by default (`CSC_IDENTITY_AUTO_DISCOVERY=false`).
 
 ## Status
 
@@ -156,7 +171,7 @@ npm run dev    # http://127.0.0.1:3000
 | Paper broker with fees/slippage | Shorting / leverage / derivatives |
 | RSS ingest + optional LLM scores | News overlay in the backtester |
 | Risk limits, kill switch, daily halt | Remote / non-loopback API access |
-| Local dashboard + Electron shell (dev) | Hosted public demo URL; signed installer (not yet) |
+| Local dashboard + Electron shell + Windows Release installers | Hosted public demo URL; Authenticode-signed installer (unsigned OK; SmartScreen may warn) |
 
 ## Tests
 

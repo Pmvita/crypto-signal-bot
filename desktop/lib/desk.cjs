@@ -88,8 +88,24 @@ async function ensureDesk(opts) {
     });
     deskMode = "dev";
   } else {
+    const standaloneServer = path.join(dashboardDir, "server.js");
     const nextBin = path.join(dashboardDir, "node_modules", "next", "dist", "bin", "next");
-    if (fs.existsSync(nextBin)) {
+    if (fs.existsSync(standaloneServer)) {
+      onLog("Starting Next.js desk (standalone server.js)…");
+      deskProc = spawn(process.execPath, [standaloneServer], {
+        cwd: dashboardDir,
+        env: {
+          ...process.env,
+          ELECTRON_RUN_AS_NODE: "1",
+          PORT: String(DESK_PORT),
+          HOSTNAME: DESK_HOST,
+          FORCE_COLOR: "0",
+        },
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      deskMode = "start";
+    } else if (fs.existsSync(nextBin)) {
       onLog("Starting Next.js desk (next start)…");
       deskProc = spawn(process.execPath, [nextBin, "start", "-H", DESK_HOST, "-p", String(DESK_PORT)], {
         cwd: dashboardDir,
