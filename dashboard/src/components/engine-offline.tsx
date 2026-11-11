@@ -14,15 +14,19 @@ export function EngineOffline({ error }: { error?: Error }) {
         <p>
           Cannot reach {ENGINE_URL}.{" "}
           {electron ? (
-            <>Use <span className="text-[var(--amber)]">Start engine</span> in the status bar or Settings.</>
+            <>
+              Use <span className="text-[var(--amber)]">Start engine</span> in the control strip
+              above (or Settings).
+            </>
           ) : (
             <>
-              Start it with <code className="text-[var(--amber)]">python -m csb serve</code>
+              Start it with <code className="text-[var(--amber)]">python -m csb serve</code>, or
+              open the desktop app for Start/Stop controls.
             </>
           )}
           {error ? ` — ${error.message}` : ""}. Stale numbers are not shown.
         </p>
-        {electron ? <ShellEngineControls /> : null}
+        <ShellEngineControls />
       </AlertDescription>
     </Alert>
   );

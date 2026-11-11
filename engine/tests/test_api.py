@@ -6,7 +6,6 @@ from csb.config import load_settings
 from csb.db import connect, init_schema
 from csb.models import Headline, Quote
 from csb.news_store import save_headlines
-from csb.service import TradingService
 
 
 @pytest.fixture
@@ -115,6 +114,37 @@ def test_candles_summary_reports_not_ready_without_history(client):
     assert body["max_signal_bars"] == 0
     assert body["required_signal_bars"] >= 200
     assert "backfill" in (body["message"] or "").lower()
+
+
+def test_candles_series_returns_empty_lists_without_history(client):
+    c, settings, _ = client
+    body = c.get("/api/candles/series?limit=16").json()
+    assert body["exchange"] == settings.exchange
+    assert body["timeframe"] == "1h"
+    assert set(body["series"]) == set(settings.symbols)
+    for symbol in settings.symbols:
+        assert body["series"][symbol] == []
+
+
+def test_status_heartbeat_includes_parsed_cycle_summary(client):
+    c, _, db = client
+    conn = connect(db)
+    init_schema(conn)
+    conn.execute(
+        "insert into cycles (started_at, finished_at, status, error, summary) values (?, ?, ?, ?, ?)",
+        (
+            1_700_000_000_000,
+            1_700_000_001_000,
+            "ok",
+            None,
+            '{"candles_added":{"BTC/USD":1},"signals":[],"orders":[],"skipped":[]}',
+        ),
+    )
+    conn.commit()
+    hb = c.get("/api/status").json()["heartbeat"]
+    assert hb["status"] == "ok"
+    assert hb["summary"]["candles_added"]["BTC/USD"] == 1
+    assert hb["summary"]["signals"] == []
 
 
 def test_backtest_run_rejects_missing_candles_with_actionable_detail(client):

@@ -4,18 +4,29 @@ import { EngineOffline } from "@/components/engine-offline";
 import { EquityChart } from "@/components/equity-chart";
 import { HeadlineList } from "@/components/headline-list";
 import { MoneyKpi, PnlKpi } from "@/components/kpi";
+import { MarketPreview } from "@/components/market-preview";
 import { PositionsTable } from "@/components/positions-table";
 import { SignalList } from "@/components/signal-list";
 import { Watchlist } from "@/components/watchlist";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEngine } from "@/lib/api";
-import type { EquityPoint, NewsResponse, Portfolio, SignalRow, Status } from "@/lib/types";
+import type {
+  CandleSeriesResponse,
+  EquityPoint,
+  NewsResponse,
+  OrderRow,
+  Portfolio,
+  SignalRow,
+  Status,
+} from "@/lib/types";
 
 export default function DeskPage() {
   const status = useEngine<Status>("/api/status", 4000);
   const portfolio = useEngine<Portfolio>("/api/portfolio", 4000);
   const equity = useEngine<EquityPoint[]>("/api/equity?limit=400", 8000);
-  const signals = useEngine<SignalRow[]>("/api/signals?limit=8", 5000);
+  const signals = useEngine<SignalRow[]>("/api/signals?limit=40", 5000);
+  const trades = useEngine<OrderRow[]>("/api/trades?limit=12", 5000);
+  const candles = useEngine<CandleSeriesResponse>("/api/candles/series?limit=48", 8000);
   const news = useEngine<NewsResponse>("/api/news?limit=6", 15000);
 
   if (status.error || portfolio.error) {
@@ -43,6 +54,15 @@ export default function DeskPage() {
           Paper account on {status.data.exchange} · live trading not available
         </p>
       </header>
+
+      <MarketPreview
+        portfolio={p}
+        signals={signals.data ?? []}
+        trades={trades.data ?? []}
+        candles={candles.data}
+        heartbeat={status.data.heartbeat}
+        exchange={status.data.exchange}
+      />
 
       <section className="grid grid-cols-2 gap-6 border border-border bg-[#0c0c0c] p-4 md:grid-cols-5">
         <MoneyKpi label="Equity" value={p.equity} />
@@ -79,7 +99,7 @@ export default function DeskPage() {
           <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
             Latest signals
           </h2>
-          <SignalList rows={signals.data ?? []} compact />
+          <SignalList rows={(signals.data ?? []).slice(0, 8)} compact />
         </section>
         <section className="space-y-3">
           <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">

@@ -102,16 +102,26 @@ def create_app(
 
     def latest_cycle(conn) -> dict[str, Any] | None:
         row = conn.execute(
-            "select id, started_at, finished_at, status, error from cycles order by id desc limit 1"
+            "select id, started_at, finished_at, status, error, summary from cycles order by id desc limit 1"
         ).fetchone()
         if row is None:
             return None
+        summary: dict[str, Any] | None = None
+        raw = row["summary"]
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    summary = parsed
+            except json.JSONDecodeError:
+                summary = None
         return {
             "id": row["id"],
             "started_at": row["started_at"],
             "finished_at": row["finished_at"],
             "status": row["status"],
             "error": row["error"],
+            "summary": summary,
         }
 
     def risk_payload(conn) -> dict[str, Any]:
@@ -406,6 +416,32 @@ def create_app(
         conn = open_conn()
         try:
             return candle_history_summary(settings, conn)
+        finally:
+            conn.close()
+
+    @app.get("/api/candles/series")
+    def candles_series(limit: int = Query(48, ge=8, le=200)) -> dict[str, Any]:
+        """Recent 1h closes per watchlist symbol for desk sparklines / live preview."""
+        conn = open_conn()
+        try:
+            series: dict[str, list[dict[str, float | int]]] = {}
+            for symbol in settings.symbols:
+                rows = conn.execute(
+                    """
+                    select ts, close from candles
+                    where exchange = ? and symbol = ? and timeframe = ?
+                    order by ts desc limit ?
+                    """,
+                    (settings.exchange, symbol, BASE_TIMEFRAME, limit),
+                ).fetchall()
+                series[symbol] = [
+                    {"ts": int(r["ts"]), "close": float(r["close"])} for r in reversed(rows)
+                ]
+            return {
+                "exchange": settings.exchange,
+                "timeframe": BASE_TIMEFRAME,
+                "series": series,
+            }
         finally:
             conn.close()
 

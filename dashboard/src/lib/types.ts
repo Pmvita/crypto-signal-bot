@@ -32,12 +32,32 @@ export interface RiskResponse {
   halted_at: number | null;
 }
 
+export interface CycleSummary {
+  candles_added?: Record<string, number>;
+  news?: unknown;
+  signals?: unknown[];
+  orders?: unknown[];
+  skipped?: unknown[];
+}
+
 export interface Heartbeat {
   id: number;
   started_at: number;
   finished_at: number | null;
   status: string;
   error: string | null;
+  summary?: CycleSummary | null;
+}
+
+export interface CandlePoint {
+  ts: number;
+  close: number;
+}
+
+export interface CandleSeriesResponse {
+  exchange: string;
+  timeframe: string;
+  series: Record<string, CandlePoint[]>;
 }
 
 export interface Status {

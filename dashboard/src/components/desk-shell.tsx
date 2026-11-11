@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { EngineControlStrip } from "@/components/engine-control-strip";
 import { StatusBar } from "@/components/status-bar";
 import { cn } from "@/lib/utils";
 
@@ -54,6 +55,7 @@ export function DeskShell({ children }: { children: React.ReactNode }) {
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <StatusBar />
+        <EngineControlStrip />
         <main className="flex-1 overflow-auto p-5">{children}</main>
       </div>
     </div>
