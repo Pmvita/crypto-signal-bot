@@ -49,7 +49,7 @@ def cmd_backfill(settings: Settings, days: int | None) -> int:
     conn = _open(settings)
     market = _market(settings, conn)
     target_days = days if days is not None else settings.backfill_days
-    print(f"Backfilling {target_days} days of 1h candles from {settings.exchange}…")
+    print(f"Backfilling {target_days} days of 15m candles from {settings.exchange}…")
     for symbol in settings.symbols:
         print(f"  {symbol} …", end="", flush=True)
 
@@ -131,7 +131,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="csb", description="Crypto Signal Bot (phase 1: paper trading only)")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    backfill = sub.add_parser("backfill", help="Download historical 1h candles")
+    backfill = sub.add_parser("backfill", help="Download historical 15m candles")
     backfill.add_argument("--days", type=int, default=None, help="Days of history (default: CSB_BACKFILL_DAYS)")
 
     sub.add_parser("backtest", help="Run the price-only backtest on stored candles")

@@ -88,7 +88,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         starting_cash=float(get("CSB_STARTING_CASH", "10000")),
         fee_bps=float(get("CSB_FEE_BPS", "40")),
         slippage_bps=float(get("CSB_SLIPPAGE_BPS", "5")),
-        cycle_seconds=int(get("CSB_CYCLE_SECONDS", "60")),
+        # Default 20s so 15m bar closes are noticed quickly (not once-a-minute stale). Override with CSB_CYCLE_SECONDS.
+        cycle_seconds=int(get("CSB_CYCLE_SECONDS", "20")),
         news_refresh_seconds=int(get("CSB_NEWS_REFRESH_SECONDS", "600")),
         api_port=int(get("CSB_API_PORT", "8787")),
         db_path=db_path,

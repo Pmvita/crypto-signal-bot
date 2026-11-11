@@ -29,6 +29,14 @@ def prior_highest(highs: Sequence[float], period: int) -> list[float | None]:
     return out
 
 
+def prior_lowest(lows: Sequence[float], period: int) -> list[float | None]:
+    """Lowest of the previous `period` values, excluding the current one."""
+    out: list[float | None] = [None] * len(lows)
+    for i in range(period, len(lows)):
+        out[i] = min(lows[i - period : i])
+    return out
+
+
 def atr(candles: Sequence[Candle], period: int) -> list[float | None]:
     """Wilder average true range. The first value appears at index `period`."""
     out: list[float | None] = [None] * len(candles)

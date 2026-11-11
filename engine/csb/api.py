@@ -16,11 +16,12 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from csb.candles import BASE_TIMEFRAME, SIGNAL_HOURS, aggregate, load_candles
+from csb.candles import BASE_TIMEFRAME, closed_bars, load_candles
 from csb.config import API_HOST, Settings
 from csb.db import connect, init_schema, now_ms
 from csb.jobs import candle_history_summary, run_backfill, run_stored_backtest
 from csb.marketdata import MarketData, create_exchange
+from csb.models import PositionSide
 from csb.news_scoring import build_scorer
 from csb.portfolio import load_portfolio
 from csb.readiness import trading_readiness
@@ -226,16 +227,21 @@ def create_app(
             positions = []
             for symbol, pos in pf.positions.items():
                 last = prices.get(symbol, pos.entry_price)
+                if pos.side is PositionSide.LONG:
+                    upnl = (last - pos.entry_price) * pos.qty - pos.entry_fee
+                else:
+                    upnl = (pos.entry_price - last) * pos.qty - pos.entry_fee
                 positions.append(
                     {
                         "symbol": symbol,
+                        "side": pos.side.value,
                         "qty": pos.qty,
                         "entry_price": pos.entry_price,
                         "entry_ts": pos.entry_ts,
                         "stop_price": pos.stop_price,
                         "highest_close": pos.highest_close,
                         "last": last,
-                        "unrealized_pnl": (last - pos.entry_price) * pos.qty - pos.entry_fee,
+                        "unrealized_pnl": upnl,
                     }
                 )
             watchlist = []
@@ -244,8 +250,8 @@ def create_app(
                 quote = quotes.get(symbol)
                 trend = None
                 try:
-                    hourly = load_candles(conn, settings.exchange, symbol, BASE_TIMEFRAME)
-                    bars = aggregate(hourly, SIGNAL_HOURS, now_ms())
+                    raw = load_candles(conn, settings.exchange, symbol, BASE_TIMEFRAME)
+                    bars = closed_bars(raw, now_ms())
                     snaps = build_snapshots(bars, params)
                     snap = next((s for s in reversed(snaps) if s is not None), None)
                     if snap is not None:
@@ -468,7 +474,7 @@ def create_app(
 
     @app.get("/api/candles/series")
     def candles_series(limit: int = Query(48, ge=8, le=200)) -> dict[str, Any]:
-        """Recent 1h closes per watchlist symbol for desk sparklines / live preview."""
+        """Recent 15m closes per watchlist symbol for desk sparklines / live preview."""
         conn = open_conn()
         try:
             series: dict[str, list[dict[str, float | int]]] = {}

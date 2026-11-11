@@ -14,11 +14,11 @@ from typing import Any
 import httpx
 
 from csb.broker import PaperBroker
-from csb.candles import BASE_TIMEFRAME, HOUR_MS, SIGNAL_HOURS, aggregate, latest_ts, load_candles
+from csb.candles import BAR_MS, BASE_TIMEFRAME, HOUR_MS, closed_bars, latest_ts, load_candles
 from csb.config import Settings
 from csb.db import get_meta, init_schema, now_ms, set_meta
 from csb.execution import OrderResult, OrderRouter
-from csb.models import Action, NewsView, OrderRequest, Quote, Side
+from csb.models import Action, NewsView, OrderRequest, PositionSide, Quote, Side
 from csb.news_feeds import FEEDS, Feed, fetch_feeds, new_http_client
 from csb.news_scoring import Scorer, ScoringError
 from csb.news_store import mark_error, news_view, pending_headlines, record_source, save_headlines, save_scores
@@ -28,7 +28,6 @@ from csb.strategy import Decision, Snapshot, StrategyParams, build_snapshots, de
 
 log = logging.getLogger("csb.service")
 
-BAR_MS = SIGNAL_HOURS * HOUR_MS
 SCORE_MAX_AGE_MS = 48 * HOUR_MS
 SCORE_BATCH = 20
 SCORE_LIMIT_PER_REFRESH = 60
@@ -201,51 +200,56 @@ class TradingService:
             if position is None:
                 continue
             if ev.decision.action is Action.EXIT:
+                exit_side = Side.SELL if position.side is PositionSide.LONG else Side.BUY
                 router.submit(
-                    OrderRequest(ev.symbol, Side.SELL, position.qty, ev.signal_id), quotes[ev.symbol], equity, now
+                    OrderRequest(ev.symbol, exit_side, position.qty, ev.signal_id),
+                    quotes[ev.symbol],
+                    equity,
+                    now,
                 )
             elif ev.decision.stop_price is not None and ev.decision.highest_close is not None:
                 position.stop_price = ev.decision.stop_price
                 position.highest_close = ev.decision.highest_close
         for ev in evaluations:
-            if ev.decision.action is not Action.ENTER:
+            if ev.decision.action is not Action.ENTER or ev.decision.position_side is None:
                 continue
             qty = position_size(equity, ev.snap.atr, ev.decision.size_multiplier, self._params)
             if qty <= 0:
                 continue
+            entry_side = Side.BUY if ev.decision.position_side is PositionSide.LONG else Side.SELL
             router.submit(
-                OrderRequest(ev.symbol, Side.BUY, qty, ev.signal_id),
+                OrderRequest(ev.symbol, entry_side, qty, ev.signal_id),
                 quotes[ev.symbol],
                 equity,
                 now,
                 stop_price=ev.decision.stop_price,
                 highest_close=ev.decision.highest_close,
+                position_side=ev.decision.position_side,
             )
         save_portfolio(self._conn, portfolio)
 
     def _evaluate(self, symbol: str, now: int, position: Any, summary: dict[str, Any]) -> _Evaluation | None:
-        """Evaluate the newest closed 4h bar once. Returns None when there is nothing new or data is behind."""
-        bucket = now - now % BAR_MS - BAR_MS  # start of the newest 4h bucket that has fully elapsed
+        """Evaluate the newest closed 15m bar once. Returns None when there is nothing new or data is behind."""
+        bucket = now - now % BAR_MS - BAR_MS  # open time of the newest 15m bucket that has fully elapsed
         meta_key = f"last_eval:{symbol}"
         if get_meta(self._conn, meta_key) == str(bucket):
             return None
 
-        final_hour = bucket + BAR_MS - HOUR_MS
         newest = latest_ts(self._conn, self._market.exchange_id, symbol, BASE_TIMEFRAME)
-        if newest is None or newest < final_hour:
+        if newest is None or newest < bucket:
             summary["skipped"].append(
-                f"{symbol}: market data is behind; waiting for the hourly candle of {_utc(final_hour)} "
+                f"{symbol}: market data is behind; waiting for the 15m candle of {_utc(bucket)} "
                 f"(newest stored: {_utc(newest) if newest is not None else 'none'})."
             )
             return None
 
-        hourly = load_candles(self._conn, self._market.exchange_id, symbol, BASE_TIMEFRAME)
-        bars = [bar for bar in aggregate(hourly, SIGNAL_HOURS, now) if bar.ts <= bucket]
-        snap = build_snapshots(bars, self._params)[-1]
+        raw = load_candles(self._conn, self._market.exchange_id, symbol, BASE_TIMEFRAME)
+        bars = [bar for bar in closed_bars(raw, now) if bar.ts <= bucket]
+        snap = build_snapshots(bars, self._params)[-1] if bars else None
         news = news_view(self._conn, symbol.split("/")[0], now, self._scorer is not None, self._params)
         if snap is None:
             reason = (
-                f"Warming up: {len(bars)} four-hour bars stored, more than {self._params.ema_slow} are needed "
+                f"Warming up: {len(bars)} fifteen-minute bars stored, more than {self._params.ema_slow} are needed "
                 "before the indicators are complete. No trading until then."
             )
             self._record_signal(symbol, bucket, now, Action.HOLD, [reason], {}, news, 1.0)
@@ -259,14 +263,22 @@ class TradingService:
             "ema_fast": snap.ema_fast,
             "ema_slow": snap.ema_slow,
             "prior_high": snap.prior_high,
+            "prior_low": snap.prior_low,
             "atr": snap.atr,
             "stop": decision.stop_price,
+            "side": decision.position_side.value if decision.position_side else None,
         }
         signal_id = self._record_signal(
             symbol, bucket, now, decision.action, decision.reasons, indicators, news, decision.size_multiplier
         )
         set_meta(self._conn, meta_key, str(bucket))
-        summary["signals"].append({"symbol": symbol, "action": decision.action.value})
+        summary["signals"].append(
+            {
+                "symbol": symbol,
+                "action": decision.action.value,
+                "side": decision.position_side.value if decision.position_side else None,
+            }
+        )
         return _Evaluation(symbol, snap, decision, signal_id)
 
     # ------------------------------------------------------------------ news

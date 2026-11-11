@@ -7,14 +7,14 @@ from dataclasses import asdict
 from typing import Any
 
 from csb.backtest import run_backtest
-from csb.candles import BASE_TIMEFRAME, SIGNAL_HOURS, aggregate, load_candles
+from csb.candles import BAR_MS, BASE_TIMEFRAME, closed_bars, load_candles
 from csb.config import Settings
 from csb.db import init_schema, now_ms
 from csb.marketdata import MarketData, create_exchange
 from csb.risk import SqliteRiskStore
 from csb.strategy import StrategyParams
 
-# EMA200 needs 200 closed 4h bars before the first signal; keep headroom so a run can trade.
+# EMA200 needs 200 closed 15m bars (~2.1 days) before the first signal; keep headroom so a run can trade.
 MIN_BARS_AFTER_WARMUP = 100
 
 
@@ -24,7 +24,7 @@ def min_backtest_bars(params: StrategyParams | None = None) -> int:
 
 
 def candle_history_summary(settings: Settings, conn) -> dict[str, Any]:
-    """Per-symbol 1h counts and aggregated 4h bar counts used by the backtest readiness check."""
+    """Per-symbol 15m bar counts used by the backtest readiness check."""
     init_schema(conn)
     params = StrategyParams()
     required = min_backtest_bars(params)
@@ -32,21 +32,22 @@ def candle_history_summary(settings: Settings, conn) -> dict[str, Any]:
     symbols: list[dict[str, Any]] = []
     max_bars = 0
     for symbol in settings.symbols:
-        hourly = load_candles(conn, settings.exchange, symbol, BASE_TIMEFRAME)
-        bars = aggregate(hourly, SIGNAL_HOURS, now)
+        raw = load_candles(conn, settings.exchange, symbol, BASE_TIMEFRAME)
+        bars = closed_bars(raw, now)
         max_bars = max(max_bars, len(bars))
         symbols.append(
             {
                 "symbol": symbol,
-                "hourly_candles": len(hourly),
+                "hourly_candles": len(raw),  # legacy key: count of stored base-timeframe candles
                 "signal_bars": len(bars),
-                "oldest_ts": hourly[0].ts if hourly else None,
-                "newest_ts": hourly[-1].ts if hourly else None,
+                "oldest_ts": raw[0].ts if raw else None,
+                "newest_ts": raw[-1].ts if raw else None,
             }
         )
     ready = max_bars >= required
     return {
         "exchange": settings.exchange,
+        "timeframe": BASE_TIMEFRAME,
         "symbols": symbols,
         "max_signal_bars": max_bars,
         "required_signal_bars": required,
@@ -56,14 +57,14 @@ def candle_history_summary(settings: Settings, conn) -> dict[str, Any]:
         if ready
         else (
             f"Not enough candle history for a meaningful backtest "
-            f"({max_bars} 4h bars stored; need at least {required}). "
+            f"({max_bars} 15m bars stored; need at least {required}). "
             f"Download history (backfill), then run again."
         ),
     }
 
 
 def run_backfill(settings: Settings, conn, days: int | None = None) -> dict[str, Any]:
-    """Download historical 1h candles into the DB. Returns stored counts and a fresh history summary."""
+    """Download historical 15m candles into the DB. Returns stored counts and a fresh history summary."""
     init_schema(conn)
     target_days = days if days is not None else settings.backfill_days
     if target_days < 1:
@@ -77,15 +78,15 @@ def run_backfill(settings: Settings, conn, days: int | None = None) -> dict[str,
 
 
 def run_stored_backtest(settings: Settings, conn) -> dict[str, Any]:
-    """Aggregate stored 1h candles to 4h bars, run the price-only backtest, persist the run."""
+    """Run the price-only backtest on stored 15m candles and persist the run."""
     init_schema(conn)
     params = StrategyParams()
     limits = SqliteRiskStore(conn).load_limits()
     now = now_ms()
     bars_by_symbol: dict[str, list] = {}
     for symbol in settings.symbols:
-        hourly = load_candles(conn, settings.exchange, symbol, BASE_TIMEFRAME)
-        bars = aggregate(hourly, SIGNAL_HOURS, now)
+        raw = load_candles(conn, settings.exchange, symbol, BASE_TIMEFRAME)
+        bars = closed_bars(raw, now)
         if bars:
             bars_by_symbol[symbol] = bars
     if not bars_by_symbol:
@@ -97,7 +98,7 @@ def run_stored_backtest(settings: Settings, conn) -> dict[str, Any]:
     if max_bars < required:
         raise RuntimeError(
             f"Not enough candle history for a meaningful backtest "
-            f"({max_bars} 4h bars; need at least {required}). "
+            f"({max_bars} 15m bars; need at least {required}). "
             f"Download history (backfill), then run again."
         )
 
@@ -108,6 +109,7 @@ def run_stored_backtest(settings: Settings, conn) -> dict[str, Any]:
         settings.starting_cash,
         settings.fee_bps,
         settings.slippage_bps,
+        bar_ms=BAR_MS,
     )
     payload = result.to_dict()
     cursor = conn.execute(
@@ -123,6 +125,7 @@ def run_stored_backtest(settings: Settings, conn) -> dict[str, Any]:
                     "slippage_bps": settings.slippage_bps,
                     "exchange": settings.exchange,
                     "symbols": list(settings.symbols),
+                    "timeframe": BASE_TIMEFRAME,
                     "news_included": False,
                 }
             ),

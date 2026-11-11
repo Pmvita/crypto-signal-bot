@@ -78,9 +78,9 @@ Builds a Next.js standalone desk into `packaging/` (gitignored), then NSIS + por
 
 Phase 1 works end-to-end on this machine (verified 2026-11-10 / 2026-11-11):
 
-- Backfill ~2 years of 1h candles (Coinbase Exchange public data) for `BTC/USD`, `ETH/USD`, `SOL/USD`
-- Price-only backtest on stored candles (see numbers below)
-- One paper trading cycle with live quotes + RSS fetch
+- Backfill 15m candles (Coinbase Exchange public data) for `BTC/USD`, `ETH/USD`, `SOL/USD` (re-backfill after upgrading from the old 1h/4h store)
+- Price-only backtest on stored 15m candles (long + short; see numbers below after re-run)
+- Paper trading cycle with live quotes + RSS fetch; loop default `CSB_CYCLE_SECONDS=20`
 - Dashboard desk / signals / news / backtest / settings with real API data
 - Kill switch engage/disengage via API; daily-loss halt covered by unit tests
 - Engine: `pytest` + `ruff`; dashboard: `typecheck` + `lint` + `build`
@@ -90,35 +90,40 @@ Screenshots: [`docs/screenshots/`](docs/screenshots/)
 
 ## Strategy (fixed constants)
 
-Long-only on closed **4h** bars built from 1h candles:
+Paper **long + short** on closed **15m** candles (not HFT — still bar-close decisions, not tick scalping):
 
-- Enter when EMA50 > EMA200 and close breaks the prior 20-bar high
-- Trail stop = highest close since entry − 3×ATR14; exit on stop or EMA50 < EMA200
-- News (when an LLM key is configured) can **veto** or **boost** size; it never opens/closes alone
+- **Long:** EMA50 > EMA200 and close breaks the prior 20-bar high
+- **Short:** EMA50 < EMA200 and close breaks the prior 20-bar low
+- Trail stop: long = favorable extreme − 3×ATR14 (ratchets up); short = favorable extreme + 3×ATR14 (ratchets down); exit on stop or opposite trend
+- News (when an LLM key is configured) can **veto** or **boost** size (polarity inverted for shorts); it never opens/closes alone
 - Risk: max position % of equity, max open positions, daily loss halt (exits still allowed), kill switch (blocks everything)
+- Loop cadence: `CSB_CYCLE_SECONDS` (default **20**) so new 15m closes are noticed quickly
+
+**Portfolio migration:** existing AppData long-only positions get `side=long` via schema migrate. Shorts need the new `positions.side` column (added automatically on engine start). Re-backfill 15m history — old 1h rows are a different timeframe key and are not reused.
 
 News is **not** included in the backtester (no clean historical headline archive).
 
 ## Verified backtest (price rules only)
 
-Run after `python -m csb backfill` then `python -m csb backtest` against Coinbase Exchange 1h history (~17,510 bars/symbol, ~730 days):
+Run after `python -m csb backfill --days 90` then `python -m csb backtest` against Coinbase Exchange **15m** history (~8,640 bars/symbol). Honest result — not tuned:
 
 | Metric | Value |
 |---|---|
 | Symbols | BTC/USD, ETH/USD, SOL/USD |
-| Bars (4h equity points) | 4,180 |
+| Timeframe | 15m |
+| Bars (equity points) | 8,441 |
 | Starting cash | $10,000.00 |
-| Final equity | $9,899.92 |
-| Total return | **−1.00%** |
-| Max drawdown | 24.42% |
-| Trades | 85 |
-| Win rate | ~28.2% |
-| Profit factor | ~0.98 |
-| Total fees | $1,438.35 |
-| Equal-weight buy & hold | ~−46.2% |
+| Final equity | $4,860.48 |
+| Total return | **−51.40%** |
+| Max drawdown | 56.76% |
+| Trades | 359 (167 long / 192 short) |
+| Win rate | ~15.3% |
+| Profit factor | ~0.35 |
+| Total fees | $5,299.48 |
+| Equal-weight buy & hold | ~+13.4% |
 | News included | false |
 
-Strategy constants were not tuned after this run.
+Strategy constants were not tuned after this run. More history (`CSB_BACKFILL_DAYS=730`) is supported; expect fee drag on 15m churn.
 
 ## News sources
 
@@ -167,8 +172,8 @@ npm run dev    # http://127.0.0.1:3000
 
 | Works | Does not (phase 1) |
 |---|---|
-| Public candle + ticker data | Live exchange order placement |
-| Paper broker with fees/slippage | Shorting / leverage / derivatives |
+| Public 15m candle + ticker data | Live exchange order placement |
+| Paper broker with fees/slippage; paper long + short | Leverage / live derivatives / HFT |
 | RSS ingest + optional LLM scores | News overlay in the backtester |
 | Risk limits, kill switch, daily halt | Remote / non-loopback API access |
 | Local dashboard + Electron shell + Windows Release installers | Hosted public demo URL; Authenticode-signed installer (unsigned OK; SmartScreen may warn) |

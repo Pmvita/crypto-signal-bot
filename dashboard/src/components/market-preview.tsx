@@ -54,7 +54,7 @@ function cycleLine(hb: Heartbeat | null | undefined, tradingEnabled: boolean): s
   const signals = Array.isArray(summary.signals) ? summary.signals.length : 0;
   const orders = Array.isArray(summary.orders) ? summary.orders.length : 0;
   if (signals === 0 && orders === 0) {
-    return `Last cycle #${hb.id} · ${hb.status} · ${ago(hb.finished_at ?? hb.started_at)} · waiting for next 4h signal bar`;
+    return `Last cycle #${hb.id} · ${hb.status} · ${ago(hb.finished_at ?? hb.started_at)} · waiting for next 15m signal bar`;
   }
   return `Last cycle #${hb.id} · ${hb.status} · ${ago(hb.finished_at ?? hb.started_at)} · ${signals} signals · ${orders} paper orders`;
 }

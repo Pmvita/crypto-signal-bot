@@ -27,7 +27,7 @@ function cycleBlurb(status: Status | undefined): string {
     ? Object.values(summary.candles_added).reduce((a, n) => a + (Number(n) || 0), 0)
     : 0;
   if (signals === 0 && orders === 0 && skipped === 0) {
-    return `Cycle #${hb.id} · ${hb.status} · quotes refreshed · waiting for next 4h signal bar`;
+    return `Cycle #${hb.id} · ${hb.status} · quotes refreshed · waiting for next 15m signal bar`;
   }
   return `Cycle #${hb.id} · ${hb.status} · +${candles} bars · ${signals} signals · ${orders} orders · ${skipped} skipped`;
 }

@@ -2,7 +2,7 @@ import pytest
 
 from csb.broker import PaperBroker
 from csb.execution import OrderRouter
-from csb.models import OrderRequest, Quote, Side
+from csb.models import OrderRequest, PositionSide, Quote, Side
 from csb.portfolio import Portfolio
 from csb.risk import MemoryRiskStore, RiskManager
 
@@ -86,7 +86,35 @@ def test_router_sells_the_whole_position_and_reports_realised_pnl():
     assert result.realized_pnl == pytest.approx(expected)
 
 
-def test_router_rejects_sell_without_position():
-    router, broker, _, _, _ = setup()
-    result = router.submit(OrderRequest("BTC/USD", Side.SELL, 1), QUOTE, 10_000, ts_ms=0)
-    assert result.status == "rejected" and broker.calls == []
+def test_router_opens_short_on_sell_without_position():
+    router, broker, _, portfolio, _ = setup()
+    result = router.submit(
+        OrderRequest("BTC/USD", Side.SELL, 1),
+        QUOTE,
+        10_000,
+        ts_ms=0,
+        stop_price=106,
+        highest_close=99,
+        position_side=PositionSide.SHORT,
+    )
+    assert result.status == "filled"
+    assert broker.calls == [("BTC/USD", Side.SELL, 1)]
+    assert portfolio.positions["BTC/USD"].side is PositionSide.SHORT
+
+
+def test_router_covers_short_with_buy_and_reports_pnl():
+    router, _, _, portfolio, _ = setup()
+    router.submit(
+        OrderRequest("BTC/USD", Side.SELL, 2),
+        QUOTE,
+        10_000,
+        ts_ms=0,
+        stop_price=106,
+        highest_close=99,
+        position_side=PositionSide.SHORT,
+    )
+    lower = Quote("BTC/USD", bid=90.0, ask=91.0, last=90.5, ts=1)
+    result = router.submit(OrderRequest("BTC/USD", Side.BUY, 2), lower, 10_020, ts_ms=1)
+    assert result.status == "filled"
+    assert portfolio.positions == {}
+    assert result.realized_pnl is not None and result.realized_pnl > 0

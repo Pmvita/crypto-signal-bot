@@ -1,6 +1,6 @@
 import pytest
 
-from csb.indicators import atr, ema, prior_highest
+from csb.indicators import atr, ema, prior_highest, prior_lowest
 from csb.models import Candle
 
 
@@ -25,6 +25,10 @@ def test_ema_is_causal():
 
 def test_prior_highest_excludes_current_bar():
     assert prior_highest([1, 5, 2, 9], 2) == [None, None, 5, 5]
+
+
+def test_prior_lowest_excludes_current_bar():
+    assert prior_lowest([4, 1, 3, 0], 2) == [None, None, 1, 1]
 
 
 def test_atr_uses_true_range_including_gaps():

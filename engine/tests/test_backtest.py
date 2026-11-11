@@ -5,7 +5,7 @@ from csb.models import Candle
 from csb.risk import RiskLimits
 from csb.strategy import StrategyParams
 
-BAR_MS = 4 * 3_600_000
+BAR_MS = 15 * 60_000
 T0 = 1_700_006_400_000
 P = StrategyParams(ema_fast=3, ema_slow=6, breakout_bars=3, atr_period=3)
 LIMITS = RiskLimits()
@@ -31,25 +31,27 @@ def run(bars=BARS, fee_bps=40.0, slippage_bps=5.0, limits=LIMITS, symbols=("BTC/
 
 
 def test_fills_at_next_bar_open_not_signal_bar_close():
-    trade = run().trade_list[0]
+    trade = next(t for t in run().trade_list if t["side"] == "long")
     assert trade["entry_ts"] == BARS[SIGNAL_BAR + 1].ts
     assert trade["entry_price"] == pytest.approx(BARS[SIGNAL_BAR + 1].open * 1.0005)
 
 
 def test_round_trip_exits_at_next_open_after_exit_signal_with_slippage():
     result = run()
-    assert result.trades == 1 and result.open_positions == []
-    trade = result.trade_list[0]
+    longs = [t for t in result.trade_list if t["side"] == "long"]
+    assert len(longs) >= 1
+    trade = longs[0]
     exit_bar = next(b for b in BARS if b.ts == trade["exit_ts"])
     assert trade["exit_price"] == pytest.approx(exit_bar.open * 0.9995)
-    assert trade["pnl"] > 0 and result.wins == 1 and result.win_rate_pct == 100.0
+    assert trade["pnl"] > 0
 
 
 def test_final_equity_equals_cash_flows_of_the_trade():
     result = run()
-    trade = result.trade_list[0]
-    assert result.final_equity == pytest.approx(10_000 + trade["pnl"])
-    assert result.total_return_pct == pytest.approx(trade["pnl"] / 100)
+    closed = sum(t["pnl"] for t in result.trade_list)
+    open_upnl = sum(p["unrealized_pnl"] for p in result.open_positions)
+    assert result.final_equity == pytest.approx(10_000 + closed + open_upnl)
+    assert result.total_return_pct == pytest.approx((closed + open_upnl) / 100)
 
 
 def test_fees_and_slippage_reduce_return():
@@ -97,7 +99,7 @@ def test_position_open_at_the_end_is_marked_to_last_close_and_not_counted_as_a_t
 
 
 def test_no_lookahead_entry_is_identical_on_truncated_history():
-    full_trade = run().trade_list[0]
+    full_trade = next(t for t in run().trade_list if t["side"] == "long")
     truncated = run(bars=BARS[:15]).open_positions[0]
     assert truncated["entry_ts"] == full_trade["entry_ts"]
     assert truncated["entry_price"] == pytest.approx(full_trade["entry_price"])
@@ -105,7 +107,7 @@ def test_no_lookahead_entry_is_identical_on_truncated_history():
 
 
 def test_position_size_risks_one_percent_of_equity_at_the_initial_stop():
-    trade = run().trade_list[0]
+    trade = next(t for t in run().trade_list if t["side"] == "long")
     # ATR3 on the signal bar: flat bars have true range 1, the signal bar 3 -> (1*2 + 3) / 3
     atr_value = (1 * 2 + 3) / 3
     assert trade["qty"] == pytest.approx(10_000 * 0.01 / (3 * atr_value))
@@ -136,3 +138,11 @@ def test_to_dict_is_json_ready_and_caps_the_equity_curve():
     data = run(bars=bars_from([100.0] * 2_000)).to_dict()
     assert len(data["equity_curve"]) <= 600
     assert set(data["equity_curve"][0]) == {"ts", "equity"}
+
+
+def test_downtrend_breakdown_produces_a_short_trade():
+    # Flat, then break down while EMA3 < EMA6, then bounce enough to exit on trend flip / trail.
+    closes = [100.0] * 8 + [100.0 - 2 * i for i in range(1, 10)] + [82.0 + i for i in range(1, 12)]
+    result = run(bars=bars_from(closes))
+    assert result.trades >= 1
+    assert any(t.get("side") == "short" for t in result.trade_list)

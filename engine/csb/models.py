@@ -11,6 +11,11 @@ class Side(StrEnum):
     SELL = "sell"
 
 
+class PositionSide(StrEnum):
+    LONG = "long"
+    SHORT = "short"
+
+
 class Action(StrEnum):
     ENTER = "enter"
     EXIT = "exit"
@@ -51,8 +56,9 @@ class Position:
     entry_price: float
     entry_ts: int
     stop_price: float
-    highest_close: float
+    highest_close: float  # favorable extreme: highest close for longs, lowest close for shorts
     entry_fee: float = 0.0
+    side: PositionSide = PositionSide.LONG
 
 
 @dataclass(frozen=True)

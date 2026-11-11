@@ -7,13 +7,16 @@ export function Sparkline({
   width = 120,
   height = 28,
   marker,
+  markerLow,
 }: {
   values: number[];
   className?: string;
   width?: number;
   height?: number;
-  /** Optional horizontal price marker (e.g. Donchian breakout level). */
+  /** Optional horizontal price marker (e.g. Donchian breakout high). */
   marker?: number | null;
+  /** Optional second marker (e.g. Donchian breakdown low). */
+  markerLow?: number | null;
 }) {
   if (values.length < 2) {
     return (
@@ -37,9 +40,10 @@ export function Sparkline({
     );
   }
 
-  const withMarker = marker != null && Number.isFinite(marker) ? [...values, marker] : values;
-  const min = Math.min(...withMarker);
-  const max = Math.max(...withMarker);
+  const extras = [marker, markerLow].filter((v): v is number => v != null && Number.isFinite(v));
+  const withMarkers = extras.length ? [...values, ...extras] : values;
+  const min = Math.min(...withMarkers);
+  const max = Math.max(...withMarkers);
   const span = max - min || 1;
   const pad = 2;
   const yFor = (v: number) => pad + (1 - (v - min) / span) * (height - pad * 2);
@@ -52,6 +56,7 @@ export function Sparkline({
     .join(" ");
   const up = values[values.length - 1]! >= values[0]!;
   const markerY = marker != null && Number.isFinite(marker) ? yFor(marker) : null;
+  const markerLowY = markerLow != null && Number.isFinite(markerLow) ? yFor(markerLow) : null;
 
   return (
     <svg
@@ -71,6 +76,18 @@ export function Sparkline({
           strokeWidth={1}
           strokeDasharray="3 2"
           opacity={0.85}
+        />
+      ) : null}
+      {markerLowY != null ? (
+        <line
+          x1={0}
+          y1={markerLowY}
+          x2={width}
+          y2={markerLowY}
+          stroke="var(--loss)"
+          strokeWidth={1}
+          strokeDasharray="3 2"
+          opacity={0.75}
         />
       ) : null}
       <polyline

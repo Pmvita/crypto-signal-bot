@@ -8,17 +8,39 @@ import { ago, pct, usd } from "@/lib/format";
 import type { ReadinessState, SymbolReadiness, TradingReadiness } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-function stateChip(state: ReadinessState, tradingEnabled: boolean) {
+function stateChip(state: ReadinessState, tradingEnabled: boolean, positionSide: string | null) {
   if (!tradingEnabled) {
     return <Badge variant="outline">Loop paused</Badge>;
   }
   switch (state) {
     case "in_position":
-      return <Badge className="bg-[var(--gain)]/20 text-[var(--gain)]">In position</Badge>;
-    case "ready_to_enter":
-      return <Badge className="bg-[var(--amber)]/25 text-[var(--amber)]">Ready to ENTER</Badge>;
+      return (
+        <Badge className="bg-[var(--gain)]/20 text-[var(--gain)]">
+          In {positionSide === "short" ? "SHORT" : "LONG"}
+        </Badge>
+      );
+    case "ready_to_enter_long":
+      return <Badge className="bg-[var(--amber)]/25 text-[var(--amber)]">Ready LONG</Badge>;
+    case "ready_to_enter_short":
+      return <Badge className="bg-[var(--amber)]/25 text-[var(--amber)]">Ready SHORT</Badge>;
+    case "waiting_for_long":
+      return (
+        <Badge className="border-[var(--amber)]/40 bg-[var(--amber)]/10 text-[var(--amber)]">
+          Waiting LONG
+        </Badge>
+      );
+    case "waiting_for_short":
+      return (
+        <Badge className="border-[var(--amber)]/40 bg-[var(--amber)]/10 text-[var(--amber)]">
+          Waiting SHORT
+        </Badge>
+      );
     case "waiting_for_enter":
-      return <Badge className="border-[var(--amber)]/40 bg-[var(--amber)]/10 text-[var(--amber)]">Waiting for ENTER</Badge>;
+      return (
+        <Badge className="border-[var(--amber)]/40 bg-[var(--amber)]/10 text-[var(--amber)]">
+          Waiting
+        </Badge>
+      );
     case "warming_up":
       return <Badge variant="outline">Warming up</Badge>;
     default: {
@@ -75,8 +97,12 @@ function SymbolCard({
 }) {
   const last = row.last ?? row.bar_close;
   const gap = row.ema_gap_pct;
-  const distPct = row.distance_to_breakout_pct;
-  const distUsd = row.distance_to_breakout;
+  const distHighPct = row.distance_to_breakout_pct;
+  const distHighUsd = row.distance_to_breakout;
+  const distLowPct = row.distance_to_breakdown_pct;
+  const distLowUsd = row.distance_to_breakdown;
+  const trendLabel =
+    row.trend_direction === "up" ? "up" : row.trend_direction === "down" ? "down" : "flat";
 
   return (
     <article
@@ -102,43 +128,62 @@ function SymbolCard({
           </div>
           <div className="mt-1 font-mono text-[10px] text-muted-foreground">
             {row.quote_ts ? `quote ${ago(row.quote_ts)}` : "no quote yet"}
-            {row.bar_ts ? ` · 4h bar ${ago(row.bar_ts)}` : ""}
+            {row.bar_ts ? ` · 15m bar ${ago(row.bar_ts)}` : ""}
           </div>
         </div>
         <div className="flex flex-col items-end gap-2">
-          {stateChip(row.state, tradingEnabled)}
+          {stateChip(row.state, tradingEnabled, row.position_side)}
           <Sparkline
             values={row.sparkline}
             marker={row.breakout_level}
+            markerLow={row.breakdown_level}
             width={132}
             height={36}
           />
-          {row.breakout_level != null ? (
-            <span className="font-mono text-[9px] text-[var(--amber)]/80">
-              breakout {usd(row.breakout_level, priceDigits(row.breakout_level))}
-            </span>
-          ) : null}
+          <div className="flex flex-col items-end gap-0.5 font-mono text-[9px]">
+            {row.breakout_level != null ? (
+              <span className="text-[var(--amber)]/80">
+                high {usd(row.breakout_level, priceDigits(row.breakout_level))}
+              </span>
+            ) : null}
+            {row.breakdown_level != null ? (
+              <span className="text-[var(--loss)]/80">
+                low {usd(row.breakdown_level, priceDigits(row.breakdown_level))}
+              </span>
+            ) : null}
+          </div>
         </div>
       </div>
 
       <div className="mt-3 space-y-0.5">
         {conditionMeter(
           `EMA${row.ema_fast_period} vs EMA${row.ema_slow_period}`,
-          Boolean(row.trend_up),
+          Boolean(row.trend_up || row.trend_down),
           row.ema_fast != null && row.ema_slow != null
-            ? `${usd(row.ema_fast, priceDigits(row.ema_fast))} / ${usd(row.ema_slow, priceDigits(row.ema_slow))} · gap ${pct(gap)} · trend up? ${row.trend_up ? "yes" : "no"}`
-            : `Need ~${row.bars_needed} 4h bars (${row.bars_ready} ready)`,
+            ? `${usd(row.ema_fast, priceDigits(row.ema_fast))} / ${usd(row.ema_slow, priceDigits(row.ema_slow))} · gap ${pct(gap)} · trend ${trendLabel}`
+            : `Need ~${row.bars_needed} 15m bars (${row.bars_ready} ready)`,
         )}
         {conditionMeter(
-          `Close vs ${row.breakout_bars}-bar high`,
-          Boolean(row.breakout_ready),
+          `LONG · close vs ${row.breakout_bars}-bar high`,
+          Boolean(row.breakout_ready && row.trend_up),
           row.prior_high != null
-            ? distUsd != null && distUsd > 0
-              ? `${usd(distUsd, priceDigits(distUsd))} (${pct(distPct)}) below breakout`
+            ? distHighUsd != null && distHighUsd > 0
+              ? `${usd(distHighUsd, priceDigits(distHighUsd))} (${pct(distHighPct)}) below breakout`
               : row.breakout_ready
                 ? `Above breakout · ${usd(row.prior_high, priceDigits(row.prior_high))}`
                 : `At / below ${usd(row.prior_high, priceDigits(row.prior_high))}`
             : "Breakout level unavailable",
+        )}
+        {conditionMeter(
+          `SHORT · close vs ${row.breakout_bars}-bar low`,
+          Boolean(row.breakdown_ready && row.trend_down),
+          row.prior_low != null
+            ? distLowUsd != null && distLowUsd > 0
+              ? `${usd(distLowUsd, priceDigits(distLowUsd))} (${pct(distLowPct)}) above breakdown`
+              : row.breakdown_ready
+                ? `Below breakdown · ${usd(row.prior_low, priceDigits(row.prior_low))}`
+                : `At / above ${usd(row.prior_low, priceDigits(row.prior_low))}`
+            : "Breakdown level unavailable",
         )}
         {conditionMeter(
           "News gate",
@@ -146,19 +191,23 @@ function SymbolCard({
           row.news_state === "off"
             ? "Scoring off — no veto"
             : row.news_state === "veto"
-              ? `Veto · score ${row.news_score ?? "—"}`
-              : `${row.news_state} · score ${row.news_score ?? "—"}`,
+              ? `Bearish · score ${row.news_score ?? "—"} (blocks LONG / boosts SHORT)`
+              : row.news_state === "boost"
+                ? `Bullish · score ${row.news_score ?? "—"} (boosts LONG / blocks SHORT)`
+                : `${row.news_state} · score ${row.news_score ?? "—"}`,
         )}
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 border-t border-border/60 pt-2 font-mono text-[10px]">
         <div>
-          <span className="text-muted-foreground">trend up </span>
-          {yesNo(row.trend_up)}
+          <span className="text-muted-foreground">trend </span>
+          <span className="text-foreground">{trendLabel}</span>
         </div>
         <div>
           <span className="text-muted-foreground">breakout </span>
           {yesNo(row.breakout_ready)}
+          <span className="text-muted-foreground"> · breakdown </span>
+          {yesNo(row.breakdown_ready)}
         </div>
         {row.in_position ? (
           <div className="col-span-2 text-muted-foreground">
@@ -177,7 +226,7 @@ function SymbolCard({
           <div className="col-span-2 text-muted-foreground">
             ATR{row.atr_period}{" "}
             <span className="text-foreground">{usd(row.atr, priceDigits(row.atr))}</span>
-            <span> · initial stop would be {row.stop_atr_mult}×ATR under entry</span>
+            <span> · initial stop {row.stop_atr_mult}×ATR from entry (above for SHORT)</span>
           </div>
         ) : null}
       </div>
@@ -215,16 +264,14 @@ export function ReadinessBoard({
     if (!readiness?.symbols) return;
     const nextCloser = new Set<string>();
     for (const row of readiness.symbols) {
-      const d = row.distance_to_breakout_pct;
+      const d =
+        row.trend_direction === "down"
+          ? row.distance_to_breakdown_pct
+          : row.distance_to_breakout_pct;
       const prev = prevDist.current.get(row.symbol);
-      if (
-        prev != null &&
-        d != null &&
-        d > 0 &&
-        d < prev &&
-        !row.breakout_ready &&
-        !row.in_position
-      ) {
+      const ready =
+        row.trend_direction === "down" ? row.breakdown_ready : row.breakout_ready;
+      if (prev != null && d != null && d > 0 && d < prev && !ready && !row.in_position) {
         nextCloser.add(row.symbol);
       }
       prevDist.current.set(row.symbol, d);
@@ -237,8 +284,9 @@ export function ReadinessBoard({
 
   const nextAt = readiness?.next_cycle_at;
   const lastAt = readiness?.last_cycle_at;
-  const cycleSec = readiness?.cycle_seconds ?? 60;
+  const cycleSec = readiness?.cycle_seconds ?? 20;
   const hb = readiness?.heartbeat;
+  const tf = readiness?.params.timeframe ?? "15m";
 
   return (
     <section className="space-y-3 border border-border bg-[#0c0c0c] p-4">
@@ -248,9 +296,9 @@ export function ReadinessBoard({
             Active watch
           </h2>
           <p className="mt-1 max-w-2xl font-mono text-xs text-muted-foreground">
-            Live readiness vs EMA{readiness?.params.ema_fast ?? 50}/{readiness?.params.ema_slow ?? 200}{" "}
-            trend + {readiness?.params.breakout_bars ?? 20}-bar Donchian breakout. Amber dashed line on
-            the sparkline is the breakout level.
+            Live readiness on {tf} · EMA{readiness?.params.ema_fast ?? 50}/
+            {readiness?.params.ema_slow ?? 200} trend + {readiness?.params.breakout_bars ?? 20}-bar
+            Donchian long/short. Amber = breakout high; red = breakdown low.
           </p>
         </div>
         <div className="text-right font-mono text-[11px]">

@@ -18,6 +18,7 @@ export function PositionsTable({ rows }: { rows: PositionRow[] }) {
       <TableHeader>
         <TableRow>
           <TableHead>Symbol</TableHead>
+          <TableHead>Side</TableHead>
           <TableHead className="text-right">Qty</TableHead>
           <TableHead className="text-right">Entry</TableHead>
           <TableHead className="text-right">Last</TableHead>
@@ -30,6 +31,9 @@ export function PositionsTable({ rows }: { rows: PositionRow[] }) {
         {rows.map((r) => (
           <TableRow key={r.symbol}>
             <TableCell className="font-mono text-[var(--amber)]">{r.symbol}</TableCell>
+            <TableCell className="font-mono uppercase text-[10px]">
+              {r.side ?? "long"}
+            </TableCell>
             <TableCell className="text-right font-mono">{qty(r.qty)}</TableCell>
             <TableCell className="text-right font-mono">{usd(r.entry_price)}</TableCell>
             <TableCell className="text-right font-mono">{usd(r.last)}</TableCell>

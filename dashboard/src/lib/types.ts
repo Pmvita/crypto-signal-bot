@@ -69,12 +69,17 @@ export interface TradingLoopInfo {
 export type ReadinessState =
   | "warming_up"
   | "waiting_for_enter"
-  | "ready_to_enter"
+  | "waiting_for_long"
+  | "waiting_for_short"
+  | "ready_to_enter_long"
+  | "ready_to_enter_short"
   | "in_position";
 
 export interface ReadinessConditions {
   trend_up: boolean;
+  trend_down: boolean;
   breakout: boolean;
+  breakdown: boolean;
   news_ok: boolean;
 }
 
@@ -89,17 +94,24 @@ export interface SymbolReadiness {
   ema_fast_period: number;
   ema_slow_period: number;
   trend_up: boolean | null;
+  trend_down: boolean | null;
+  trend_direction: "up" | "down" | "flat" | null;
   ema_gap_pct: number | null;
   prior_high: number | null;
+  prior_low: number | null;
   breakout_bars: number;
   breakout_ready: boolean | null;
+  breakdown_ready: boolean | null;
   distance_to_breakout: number | null;
   distance_to_breakout_pct: number | null;
+  distance_to_breakdown: number | null;
+  distance_to_breakdown_pct: number | null;
   atr: number | null;
   atr_period: number;
   stop_atr_mult: number;
   trail_stop: number | null;
   in_position: boolean;
+  position_side: "long" | "short" | null;
   position_stop: number | null;
   action: Action;
   state: ReadinessState;
@@ -108,10 +120,14 @@ export interface SymbolReadiness {
   news_score: number | null;
   sparkline: number[];
   breakout_level: number | null;
+  breakdown_level: number | null;
   last_eval_bar_ts: number | null;
   ready_for_enter: boolean;
+  ready_side: "long" | "short" | null;
   bars_ready: number;
   bars_needed: number;
+  timeframe: string;
+  bar_ms: number;
 }
 
 export interface TradingReadiness {
@@ -129,6 +145,8 @@ export interface TradingReadiness {
     breakout_bars: number;
     atr_period: number;
     stop_atr_mult: number;
+    timeframe: string;
+    bar_ms: number;
     signal_hours: number;
   };
   symbols: SymbolReadiness[];
@@ -149,6 +167,7 @@ export interface Status {
 
 export interface PositionRow {
   symbol: string;
+  side?: "long" | "short";
   qty: number;
   entry_price: number;
   entry_ts: number;

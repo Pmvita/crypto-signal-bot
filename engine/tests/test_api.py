@@ -204,7 +204,7 @@ def test_candles_series_returns_empty_lists_without_history(client):
     c, settings, _ = client
     body = c.get("/api/candles/series?limit=16").json()
     assert body["exchange"] == settings.exchange
-    assert body["timeframe"] == "1h"
+    assert body["timeframe"] == "15m"
     assert set(body["series"]) == set(settings.symbols)
     for symbol in settings.symbols:
         assert body["series"][symbol] == []
@@ -219,15 +219,29 @@ def test_trading_readiness_returns_per_symbol_board(client):
     assert body["cycle_seconds"] >= 1
     assert "server_time" in body
     assert set(s["symbol"] for s in body["symbols"]) == set(settings.symbols)
+    assert body["params"]["timeframe"] == "15m"
     for row in body["symbols"]:
-        assert row["state"] in {"warming_up", "waiting_for_enter", "ready_to_enter", "in_position"}
+        assert row["state"] in {
+            "warming_up",
+            "waiting_for_enter",
+            "waiting_for_long",
+            "waiting_for_short",
+            "ready_to_enter_long",
+            "ready_to_enter_short",
+            "in_position",
+        }
         assert "conditions" in row
         assert "trend_up" in row["conditions"]
+        assert "trend_down" in row["conditions"]
         assert "breakout" in row["conditions"]
+        assert "breakdown" in row["conditions"]
         assert "news_ok" in row["conditions"]
+        assert "prior_low" in row
+        assert "distance_to_breakdown" in row
         assert isinstance(row["sparkline"], list)
         assert row["ema_fast_period"] == 50
         assert row["breakout_bars"] == 20
+        assert row["timeframe"] == "15m"
 
 
 def test_status_heartbeat_includes_parsed_cycle_summary(client):

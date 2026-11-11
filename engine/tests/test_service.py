@@ -5,10 +5,10 @@ from email.utils import format_datetime
 import httpx
 import pytest
 
-from csb.candles import HOUR_MS, upsert_candles
+from csb.candles import BAR_MS, HOUR_MS, upsert_candles
 from csb.config import load_settings
 from csb.db import connect, get_meta, init_schema
-from csb.models import Candle, HeadlineScore, Position, Quote
+from csb.models import Candle, HeadlineScore, Position, PositionSide, Quote
 from csb.news_feeds import Feed
 from csb.news_scoring import ScoringError
 from csb.portfolio import load_portfolio, save_portfolio
@@ -16,26 +16,29 @@ from csb.risk import RiskManager, SqliteRiskStore, utc_day
 from csb.service import TradingService, scoring_status
 from csb.strategy import StrategyParams
 
-BAR_MS = 4 * HOUR_MS
 T0 = 1_700_006_400_000
 PARAMS = StrategyParams(ema_fast=3, ema_slow=6, breakout_bars=3, atr_period=3)
-# Flat for 8 four-hour bars, then a rising bar that breaks out: bar 8 is an entry signal.
+# Flat for 8 fifteen-minute bars, then a rising bar that breaks out: bar 8 is an entry signal.
 CLOSES = [100.0] * 8 + [102.0]
 SIGNAL_BAR = 8
 NOW = T0 + (SIGNAL_BAR + 1) * BAR_MS + 60_000  # one minute after the signal bar closed
 FEED = Feed("Example", "news", "https://example.com/rss")
 
 
-def hourly_from_bars(closes, t0=T0):
-    """Four hourly candles per 4h bar, moving linearly from the previous close to this close."""
+def bars_from(closes, t0=T0):
+    """One 15m candle per close."""
     out, prev = [], closes[0]
-    for k, close in enumerate(closes):
-        for j in range(4):
-            start = prev + (close - prev) * j / 4
-            end = prev + (close - prev) * (j + 1) / 4
-            out.append(
-                Candle(t0 + k * BAR_MS + j * HOUR_MS, start, max(start, end) + 0.125, min(start, end) - 0.125, end, 1.0)
+    for i, close in enumerate(closes):
+        out.append(
+            Candle(
+                t0 + i * BAR_MS,
+                prev,
+                max(prev, close) + 0.5,
+                min(prev, close) - 0.5,
+                close,
+                1.0,
             )
+        )
         prev = close
     return out
 
@@ -93,7 +96,7 @@ def env(tmp_path):
     settings = load_settings({"CSB_SYMBOLS": "BTC/USD", "CSB_DB_PATH": str(tmp_path / "s.sqlite3")})
     conn = connect(settings.db_path)
     init_schema(conn)
-    upsert_candles(conn, "fake", "BTC/USD", "1h", hourly_from_bars(CLOSES))
+    upsert_candles(conn, "fake", "BTC/USD", "15m", bars_from(CLOSES))
     return settings, conn
 
 
@@ -128,7 +131,7 @@ def test_refresh_market_data_updates_quotes_without_signals_or_orders(env):
     assert len(rows(conn, "equity_snapshots")) == 1
 
 
-def test_cycle_records_signal_and_fills_entry_at_live_quote(env):
+def test_cycle_records_signal_and_fills_long_entry_at_live_quote(env):
     _, conn = env
     summary = make(env).run_cycle()
     assert summary["status"] == "ok" and summary["error"] is None
@@ -136,8 +139,11 @@ def test_cycle_records_signal_and_fills_entry_at_live_quote(env):
     (signal,) = rows(conn, "signals")
     assert signal["action"] == "enter" and signal["symbol"] == "BTC/USD"
     assert signal["ts"] == T0 + SIGNAL_BAR * BAR_MS
-    assert json.loads(signal["indicators"])["close"] == 102.0
+    indicators = json.loads(signal["indicators"])
+    assert indicators["close"] == 102.0
+    assert indicators["side"] == "long"
     assert len(json.loads(signal["reasons"])) >= 3
+    assert any("LONG" in r for r in json.loads(signal["reasons"]))
 
     (order,) = rows(conn, "orders")
     assert order["status"] == "filled" and order["side"] == "buy" and order["broker"] == "paper"
@@ -147,8 +153,9 @@ def test_cycle_records_signal_and_fills_entry_at_live_quote(env):
 
     portfolio = load_portfolio(conn, 10_000)
     position = portfolio.positions["BTC/USD"]
+    assert position.side is PositionSide.LONG
     assert position.qty == pytest.approx(order["qty"])
-    assert position.stop_price == pytest.approx(json.loads(signal["indicators"])["stop"])
+    assert position.stop_price == pytest.approx(indicators["stop"])
     assert portfolio.cash == pytest.approx(10_000 - order["qty"] * order["fill_price"] * 1.004)
 
     assert len(rows(conn, "equity_snapshots")) == 1
@@ -186,7 +193,9 @@ def test_kill_switch_stops_all_orders_but_signals_are_still_recorded(env):
 def test_kill_switch_also_blocks_exits(env):
     settings, conn = env
     portfolio = load_portfolio(conn, 10_000)
-    portfolio.positions["BTC/USD"] = Position("BTC/USD", 1.0, 100.0, T0, stop_price=500.0, highest_close=500.0)
+    portfolio.positions["BTC/USD"] = Position(
+        "BTC/USD", 1.0, 100.0, T0, stop_price=500.0, highest_close=500.0, side=PositionSide.LONG
+    )
     save_portfolio(conn, portfolio)
     RiskManager(SqliteRiskStore(conn)).set_kill_switch(True)
 
@@ -213,7 +222,9 @@ def test_daily_loss_halt_still_allows_the_exit(env):
     _, conn = env
     portfolio = load_portfolio(conn, 10_000)
     portfolio.cash = 9_900.0
-    portfolio.positions["BTC/USD"] = Position("BTC/USD", 1.0, 100.0, T0, stop_price=500.0, highest_close=500.0)
+    portfolio.positions["BTC/USD"] = Position(
+        "BTC/USD", 1.0, 100.0, T0, stop_price=500.0, highest_close=500.0, side=PositionSide.LONG
+    )
     save_portfolio(conn, portfolio)
     SqliteRiskStore(conn).save_day(utc_day(NOW), 10_500.0, False, None)
 
@@ -235,16 +246,16 @@ def test_stale_market_data_is_not_traded(env):
     assert any("BTC/USD" in s for s in summary["skipped"])
 
 
-def test_bar_waits_for_its_final_hourly_candle(env):
-    settings, conn = env
-    last_hour = T0 + SIGNAL_BAR * BAR_MS + 3 * HOUR_MS
-    conn.execute("delete from candles where ts = ?", (last_hour,))
+def test_bar_waits_for_closed_15m_candle(env):
+    _, conn = env
+    signal_ts = T0 + SIGNAL_BAR * BAR_MS
+    conn.execute("delete from candles where ts = ?", (signal_ts,))
     conn.commit()
     service = make(env)
     service.run_cycle()
     assert rows(conn, "signals") == []
 
-    upsert_candles(conn, "fake", "BTC/USD", "1h", [c for c in hourly_from_bars(CLOSES) if c.ts == last_hour])
+    upsert_candles(conn, "fake", "BTC/USD", "15m", [c for c in bars_from(CLOSES) if c.ts == signal_ts])
     service.run_cycle()
     assert len(rows(conn, "signals")) == 1
 
@@ -330,7 +341,9 @@ def test_cycle_error_is_recorded_and_does_not_raise(env):
 def test_trailing_stop_is_persisted_while_holding(env):
     _, conn = env
     portfolio = load_portfolio(conn, 10_000)
-    portfolio.positions["BTC/USD"] = Position("BTC/USD", 1.0, 100.0, T0, stop_price=90.0, highest_close=100.0)
+    portfolio.positions["BTC/USD"] = Position(
+        "BTC/USD", 1.0, 100.0, T0, stop_price=90.0, highest_close=100.0, side=PositionSide.LONG
+    )
     save_portfolio(conn, portfolio)
     make(env).run_cycle()
     signal = rows(conn, "signals")[0]

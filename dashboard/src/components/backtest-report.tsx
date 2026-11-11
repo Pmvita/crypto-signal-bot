@@ -84,7 +84,7 @@ export function BacktestReport({
         <div className="rounded-md border border-[var(--loss)]/40 bg-[var(--loss)]/10 px-3 py-3 font-mono text-xs text-[var(--loss)] space-y-2">
           <p>
             {history.message ??
-              `Need at least ${history.required_signal_bars} 4h bars; have ${history.max_signal_bars}.`}
+              `Need at least ${history.required_signal_bars} 15m bars; have ${history.max_signal_bars}.`}
           </p>
           <p className="text-muted-foreground">
             Paper cycles only keep a short warm-up window. Download history before running a
@@ -95,7 +95,7 @@ export function BacktestReport({
 
       {historyKnown && ready ? (
         <p className="font-mono text-[10px] text-muted-foreground">
-          History ready · {history.max_signal_bars} 4h bars (need {history.required_signal_bars}) ·{" "}
+          History ready · {history.max_signal_bars} 15m bars (need {history.required_signal_bars}) ·{" "}
           {history.symbols.map((s) => `${s.symbol} ${s.hourly_candles}h`).join(" · ")}
         </p>
       ) : null}

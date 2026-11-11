@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from csb.db import now_ms
-from csb.models import Side
+from csb.models import PositionSide, Side
 
 MIN_NOTIONAL = 10.0
 
@@ -138,6 +138,16 @@ def utc_day(ts_ms: int) -> str:
     return datetime.fromtimestamp(ts_ms / 1000, tz=UTC).strftime("%Y-%m-%d")
 
 
+def _is_exit(side: Side, position_side: PositionSide | None) -> bool:
+    if position_side is None:
+        return False
+    if side is Side.SELL and position_side is PositionSide.LONG:
+        return True
+    if side is Side.BUY and position_side is PositionSide.SHORT:
+        return True
+    return False
+
+
 class RiskManager:
     def __init__(self, store: RiskStore) -> None:
         self._store = store
@@ -179,6 +189,7 @@ class RiskManager:
         open_positions: int,
         has_position: bool,
         fee_rate: float,
+        position_side: PositionSide | None = None,
     ) -> RiskDecision:
         """Approve, shrink or reject one order. `price` is the expected fill price."""
         if qty <= 0 or price <= 0:
@@ -188,10 +199,27 @@ class RiskManager:
         if state.kill_switch:
             return RiskDecision(False, 0.0, "Kill switch engaged: no orders are placed.")
 
-        if side is Side.SELL:
+        if _is_exit(side, position_side):
             if not has_position:
-                return RiskDecision(False, 0.0, "No open position to sell.")
+                return RiskDecision(False, 0.0, "No open position to close.")
+            if side is Side.BUY:
+                # Covering a short spends cash; clamp to what is affordable so paper stays solvent.
+                affordable = cash / (price * (1 + fee_rate)) if price * (1 + fee_rate) > 0 else 0.0
+                if qty > affordable + 1e-12:
+                    return RiskDecision(
+                        False,
+                        0.0,
+                        f"Insufficient cash to cover short: need {qty * price * (1 + fee_rate):.2f}, have {cash:.2f}.",
+                    )
             return RiskDecision(True, qty)
+
+        # Entry path: BUY opens long, SELL opens short.
+        if has_position:
+            return RiskDecision(False, 0.0, "A position is already open for this symbol.")
+        if side is Side.SELL and position_side is PositionSide.LONG:
+            return RiskDecision(False, 0.0, "No open position to sell.")
+        if side is Side.BUY and position_side is PositionSide.SHORT:
+            return RiskDecision(False, 0.0, "No open short to cover.")
 
         limits = self._store.load_limits()
         if state.halted:
@@ -200,8 +228,6 @@ class RiskManager:
                 0.0,
                 f"Daily loss limit of {limits.daily_loss_limit_pct:g}% hit: entries halted until the next UTC day.",
             )
-        if has_position:
-            return RiskDecision(False, 0.0, "A position is already open for this symbol.")
         if open_positions >= limits.max_open_positions:
             return RiskDecision(False, 0.0, f"Max open positions ({limits.max_open_positions}) reached.")
 
@@ -210,10 +236,13 @@ class RiskManager:
         if qty * price > max_notional:
             qty = max_notional / price
             notes.append(f"Reduced to max position size ({limits.max_position_pct:g}% of equity).")
-        affordable = cash / (price * (1 + fee_rate))
-        if qty > affordable:
-            qty = max(affordable, 0.0)
-            notes.append("Reduced to available cash.")
+
+        if side is Side.BUY:
+            affordable = cash / (price * (1 + fee_rate))
+            if qty > affordable:
+                qty = max(affordable, 0.0)
+                notes.append("Reduced to available cash.")
+
         if qty * price < MIN_NOTIONAL:
             return RiskDecision(
                 False, 0.0, f"Order is below the minimum notional of {MIN_NOTIONAL:g} USD after limits.", notes

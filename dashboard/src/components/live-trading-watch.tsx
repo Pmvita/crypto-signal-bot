@@ -88,7 +88,7 @@ export function LiveTradingWatch({
           {flat ? (
             <p className="font-mono text-xs text-muted-foreground">
               {tradingEnabled
-                ? "Loop is watching — entries only when trend+breakout fire (see Active watch)."
+                ? "Loop is watching — LONG/SHORT entries when 15m trend+Donchian fire (see Active watch)."
                 : "No open positions"}
             </p>
           ) : (

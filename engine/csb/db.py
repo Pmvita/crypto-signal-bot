@@ -106,7 +106,8 @@ create table if not exists positions (
     entry_ts integer not null,
     entry_fee real not null,
     stop_price real not null,
-    highest_close real not null
+    highest_close real not null,
+    side text not null default 'long'
 );
 
 create table if not exists account (
@@ -180,6 +181,10 @@ def connect(path: Path | str) -> sqlite3.Connection:
 
 def init_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    cols = {row[1] for row in conn.execute("pragma table_info(positions)").fetchall()}
+    if "side" not in cols:
+        # Existing AppData long-only portfolios: treat open rows as long.
+        conn.execute("alter table positions add column side text not null default 'long'")
     conn.commit()
 
 

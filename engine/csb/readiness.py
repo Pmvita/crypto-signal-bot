@@ -5,9 +5,10 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-from csb.candles import BASE_TIMEFRAME, SIGNAL_HOURS, aggregate, load_candles
+from csb.candles import BAR_MS, BASE_TIMEFRAME, HOUR_MS, closed_bars, load_candles
 from csb.config import Settings
 from csb.db import get_meta, now_ms
+from csb.models import PositionSide
 from csb.news_store import news_view
 from csb.portfolio import load_portfolio
 from csb.strategy import StrategyParams, build_snapshots, decide
@@ -41,8 +42,8 @@ def symbol_readiness(
     last = float(quote["last"]) if quote and quote.get("last") is not None else None
     quote_ts = int(quote["ts"]) if quote and quote.get("ts") is not None else None
 
-    hourly = load_candles(conn, settings.exchange, symbol, BASE_TIMEFRAME)
-    bars = aggregate(hourly, SIGNAL_HOURS, now)
+    raw = load_candles(conn, settings.exchange, symbol, BASE_TIMEFRAME)
+    bars = closed_bars(raw, now)
     snaps = build_snapshots(bars, params)
     snap = next((s for s in reversed(snaps) if s is not None), None)
     news = news_view(conn, symbol.split("/")[0], now, scoring_enabled, params)
@@ -62,60 +63,87 @@ def symbol_readiness(
         "ema_fast_period": params.ema_fast,
         "ema_slow_period": params.ema_slow,
         "trend_up": None,
+        "trend_down": None,
+        "trend_direction": None,
         "ema_gap_pct": None,
         "prior_high": None,
+        "prior_low": None,
         "breakout_bars": params.breakout_bars,
         "breakout_ready": None,
+        "breakdown_ready": None,
         "distance_to_breakout": None,
         "distance_to_breakout_pct": None,
+        "distance_to_breakdown": None,
+        "distance_to_breakdown_pct": None,
         "atr": None,
         "atr_period": params.atr_period,
         "stop_atr_mult": params.stop_atr_mult,
         "trail_stop": None,
         "in_position": position is not None,
+        "position_side": position.side.value if position is not None else None,
         "position_stop": position.stop_price if position is not None else None,
         "action": "hold",
         "state": "warming_up",
         "conditions": {
             "trend_up": False,
+            "trend_down": False,
             "breakout": False,
+            "breakdown": False,
             "news_ok": news.state.value != "veto",
         },
         "news_state": news.state.value,
         "news_score": news.score,
         "sparkline": sparkline,
         "breakout_level": None,
+        "breakdown_level": None,
         "last_eval_bar_ts": last_eval_bar_ts,
         "ready_for_enter": False,
+        "ready_side": None,
         "bars_ready": len(bars),
         "bars_needed": params.ema_slow + 1,
+        "timeframe": BASE_TIMEFRAME,
+        "bar_ms": BAR_MS,
     }
 
     if snap is None:
         return base
 
     trend_up = snap.ema_fast > snap.ema_slow
+    trend_down = snap.ema_fast < snap.ema_slow
     breakout = snap.close > snap.prior_high
+    breakdown = snap.close < snap.prior_low
     ema_gap_pct = _pct(snap.ema_fast - snap.ema_slow, snap.ema_slow)
-    distance = snap.prior_high - snap.close
-    distance_pct = _pct(distance, snap.close)
+    distance_high = snap.prior_high - snap.close
+    distance_high_pct = _pct(distance_high, snap.close)
+    distance_low = snap.close - snap.prior_low
+    distance_low_pct = _pct(distance_low, snap.close)
 
     decision = decide(snap, position, news, params)
     trail_stop = decision.stop_price
 
+    ready_side = None
     if position is not None:
         state = "in_position"
-    elif decision.action.value == "enter":
-        state = "ready_to_enter"
+    elif decision.action.value == "enter" and decision.position_side is PositionSide.LONG:
+        state = "ready_to_enter_long"
+        ready_side = "long"
+    elif decision.action.value == "enter" and decision.position_side is PositionSide.SHORT:
+        state = "ready_to_enter_short"
+        ready_side = "short"
+    elif trend_up:
+        state = "waiting_for_long"
+    elif trend_down:
+        state = "waiting_for_short"
     else:
         state = "waiting_for_enter"
 
-    ready = (
-        position is None
-        and trend_up
-        and breakout
-        and news.state.value != "veto"
-    )
+    # News veto polarity depends on side; decide() already applied it for ready_to_enter.
+    news_ok_long = news.state.value != "veto"
+    news_ok_short = news.state.value != "boost"  # bullish boost blocks shorts
+    if news.state.value in {"off", "no_headlines", "neutral"}:
+        news_ok_long = news_ok_short = True
+
+    ready = position is None and decision.action.value == "enter"
 
     base.update(
         {
@@ -124,22 +152,32 @@ def symbol_readiness(
             "ema_fast": snap.ema_fast,
             "ema_slow": snap.ema_slow,
             "trend_up": trend_up,
+            "trend_down": trend_down,
+            "trend_direction": "up" if trend_up else "down" if trend_down else "flat",
             "ema_gap_pct": ema_gap_pct,
             "prior_high": snap.prior_high,
+            "prior_low": snap.prior_low,
             "breakout_ready": breakout,
-            "distance_to_breakout": distance,
-            "distance_to_breakout_pct": distance_pct,
+            "breakdown_ready": breakdown,
+            "distance_to_breakout": distance_high,
+            "distance_to_breakout_pct": distance_high_pct,
+            "distance_to_breakdown": distance_low,
+            "distance_to_breakdown_pct": distance_low_pct,
             "atr": snap.atr,
             "trail_stop": trail_stop,
             "action": decision.action.value,
             "state": state,
             "conditions": {
                 "trend_up": trend_up,
+                "trend_down": trend_down,
                 "breakout": breakout,
-                "news_ok": news.state.value != "veto",
+                "breakdown": breakdown,
+                "news_ok": news_ok_long if trend_up else news_ok_short if trend_down else True,
             },
             "breakout_level": snap.prior_high,
+            "breakdown_level": snap.prior_low,
             "ready_for_enter": ready,
+            "ready_side": ready_side,
         }
     )
     return base
@@ -200,7 +238,9 @@ def trading_readiness(
             "breakout_bars": params.breakout_bars,
             "atr_period": params.atr_period,
             "stop_atr_mult": params.stop_atr_mult,
-            "signal_hours": SIGNAL_HOURS,
+            "timeframe": BASE_TIMEFRAME,
+            "bar_ms": BAR_MS,
+            "signal_hours": BAR_MS / HOUR_MS,
         },
         "symbols": symbols,
     }

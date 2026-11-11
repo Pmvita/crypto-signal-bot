@@ -1,4 +1,4 @@
-"""Candle storage and local aggregation of 1h candles into the signal timeframe."""
+"""Candle storage and helpers for the 15m signal timeframe."""
 
 from __future__ import annotations
 
@@ -7,8 +7,11 @@ from collections.abc import Iterable, Sequence
 
 from csb.models import Candle
 
+MINUTE_MS = 60_000
 HOUR_MS = 3_600_000
-BASE_TIMEFRAME = "1h"
+BAR_MS = 15 * MINUTE_MS
+BASE_TIMEFRAME = "15m"
+# Kept for callers that still aggregate coarser bars from finer ones in tests.
 SIGNAL_HOURS = 4
 
 
@@ -50,6 +53,11 @@ def latest_ts(conn: sqlite3.Connection, exchange: str, symbol: str, timeframe: s
         (exchange, symbol, timeframe),
     ).fetchone()
     return row["ts"]
+
+
+def closed_bars(candles: Sequence[Candle], now_ms: int, bar_ms: int = BAR_MS) -> list[Candle]:
+    """Drop the in-progress bucket (open time + bar_ms has not elapsed yet)."""
+    return [c for c in candles if c.ts + bar_ms <= now_ms]
 
 
 def aggregate(candles: Sequence[Candle], hours: int, now_ms: int) -> list[Candle]:

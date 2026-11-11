@@ -11,9 +11,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from csb.broker import PaperBroker
-from csb.candles import HOUR_MS, SIGNAL_HOURS
+from csb.candles import BAR_MS
 from csb.execution import OrderRouter
-from csb.models import Action, Candle, NewsState, NewsView, OrderRequest, Quote, Side
+from csb.models import Action, Candle, NewsState, NewsView, OrderRequest, PositionSide, Quote, Side
 from csb.portfolio import Portfolio
 from csb.risk import MemoryRiskStore, RiskLimits, RiskManager
 from csb.strategy import StrategyParams, build_snapshots, decide, position_size
@@ -30,6 +30,7 @@ class _Pending:
     stop_price: float | None
     highest_close: float | None
     reason: str
+    position_side: PositionSide | None
 
 
 @dataclass
@@ -106,7 +107,7 @@ def run_backtest(
     starting_cash: float,
     fee_bps: float,
     slippage_bps: float,
-    bar_ms: int = SIGNAL_HOURS * HOUR_MS,
+    bar_ms: int = BAR_MS,
 ) -> BacktestResult:
     symbols = list(bars_by_symbol)
     snapshots = {s: build_snapshots(bars_by_symbol[s], params) for s in symbols}
@@ -129,7 +130,18 @@ def run_backtest(
     for step, ts in enumerate(timeline):
         # 1. Fill orders decided on the previous bar at this bar's open. Exits first, then entries.
         waiting: list[_Pending] = []
-        for order in sorted(pending, key=lambda o: (o.side is Side.BUY, symbols.index(o.symbol))):
+        for order in sorted(
+            pending,
+            key=lambda o: (
+                0
+                if (
+                    (o.side is Side.SELL and o.position_side is PositionSide.LONG)
+                    or (o.side is Side.BUY and o.position_side is PositionSide.SHORT)
+                )
+                else 1,
+                symbols.index(o.symbol),
+            ),
+        ):
             i = index[order.symbol].get(ts)
             if i is None:  # this symbol has no bar at this time (gap in the data): wait for its next bar
                 waiting.append(order)
@@ -140,26 +152,30 @@ def run_backtest(
             result = router.submit(
                 OrderRequest(order.symbol, order.side, order.qty),
                 quote,
-                equity=portfolio.equity(last_close),
+                equity=portfolio.equity(last_close) if last_close else starting_cash,
                 ts_ms=ts,
                 stop_price=order.stop_price,
                 highest_close=order.highest_close,
+                position_side=order.position_side,
             )
             if result.status == "rejected":
                 rejected += 1
-            elif order.side is Side.BUY:
+            elif held is None and result.fill is not None:
                 entry_bar[order.symbol] = step
             elif held is not None and result.fill is not None:
                 trade_list.append(
                     {
                         "symbol": order.symbol,
+                        "side": held.side.value,
                         "entry_ts": held.entry_ts,
                         "entry_price": held.entry_price,
                         "exit_ts": ts,
                         "exit_price": result.fill.price,
                         "qty": held.qty,
                         "pnl": result.realized_pnl,
-                        "return_pct": result.realized_pnl / (held.qty * held.entry_price) * 100,
+                        "return_pct": result.realized_pnl / (held.qty * held.entry_price) * 100
+                        if held.qty * held.entry_price
+                        else 0.0,
                         "fees": held.entry_fee + result.fill.fee,
                         "bars_held": step - entry_bar.pop(order.symbol, step),
                         "exit_reason": order.reason,
@@ -172,7 +188,7 @@ def run_backtest(
             i = index[s].get(ts)
             if i is not None:
                 last_close[s] = bars_by_symbol[s][i].close
-        equity = portfolio.equity(last_close)
+        equity = portfolio.equity(last_close) if last_close else starting_cash
         risk.update_equity(equity, ts + bar_ms)
 
         # 3. Decide on the bar that just closed; orders wait for the next open.
@@ -189,14 +205,26 @@ def run_backtest(
                 continue
             position = portfolio.positions.get(s)
             decision = decide(snap, position, NEWS_OFF, params)
-            if decision.action is Action.ENTER:
+            if decision.action is Action.ENTER and decision.position_side is not None:
                 qty = position_size(equity, snap.atr, decision.size_multiplier, params)
                 if qty > 0:
+                    entry_side = Side.BUY if decision.position_side is PositionSide.LONG else Side.SELL
                     pending.append(
-                        _Pending(s, Side.BUY, qty, decision.stop_price, decision.highest_close, decision.reasons[0])
+                        _Pending(
+                            s,
+                            entry_side,
+                            qty,
+                            decision.stop_price,
+                            decision.highest_close,
+                            decision.reasons[0],
+                            decision.position_side,
+                        )
                     )
             elif decision.action is Action.EXIT and position is not None:
-                pending.append(_Pending(s, Side.SELL, position.qty, None, None, decision.reasons[0]))
+                exit_side = Side.SELL if position.side is PositionSide.LONG else Side.BUY
+                pending.append(
+                    _Pending(s, exit_side, position.qty, None, None, decision.reasons[0], position.side)
+                )
             elif position is not None and decision.stop_price is not None and decision.highest_close is not None:
                 position.stop_price = decision.stop_price
                 position.highest_close = decision.highest_close
@@ -233,11 +261,16 @@ def run_backtest(
         open_positions=[
             {
                 "symbol": p.symbol,
+                "side": p.side.value,
                 "qty": p.qty,
                 "entry_ts": p.entry_ts,
                 "entry_price": p.entry_price,
                 "last_close": last_close[p.symbol],
-                "unrealized_pnl": (last_close[p.symbol] - p.entry_price) * p.qty - p.entry_fee,
+                "unrealized_pnl": (
+                    (last_close[p.symbol] - p.entry_price) * p.qty - p.entry_fee
+                    if p.side is PositionSide.LONG
+                    else (p.entry_price - last_close[p.symbol]) * p.qty - p.entry_fee
+                ),
             }
             for p in portfolio.positions.values()
         ],

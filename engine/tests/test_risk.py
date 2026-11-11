@@ -1,7 +1,7 @@
 import pytest
 
 from csb.db import connect, init_schema
-from csb.models import Side
+from csb.models import PositionSide, Side
 from csb.risk import MemoryRiskStore, RiskLimits, RiskManager, SqliteRiskStore
 
 DAY1 = 1_700_006_400_000 + 3_600_000  # 2023-11-15 01:00 UTC
@@ -13,11 +13,35 @@ def manager():
 
 
 def buy(rm, qty=1.0, price=100.0, equity=10_000.0, cash=10_000.0, open_positions=0, has_position=False, fee=0.0):
-    return rm.check_order(Side.BUY, qty, price, equity, cash, open_positions, has_position, fee)
+    return rm.check_order(
+        Side.BUY, qty, price, equity, cash, open_positions, has_position, fee, position_side=PositionSide.LONG
+    )
 
 
-def sell(rm, qty=1.0, price=100.0, equity=10_000.0, cash=0.0, open_positions=1, has_position=True):
-    return rm.check_order(Side.SELL, qty, price, equity, cash, open_positions, has_position, 0.0)
+def sell(
+    rm,
+    qty=1.0,
+    price=100.0,
+    equity=10_000.0,
+    cash=0.0,
+    open_positions=1,
+    has_position=True,
+    position_side: PositionSide | None = None,
+):
+    side = position_side if position_side is not None else (PositionSide.LONG if has_position else PositionSide.SHORT)
+    return rm.check_order(Side.SELL, qty, price, equity, cash, open_positions, has_position, 0.0, position_side=side)
+
+
+def short_entry(rm, qty=1.0, price=100.0, equity=10_000.0, cash=10_000.0, open_positions=0):
+    return rm.check_order(
+        Side.SELL, qty, price, equity, cash, open_positions, False, 0.0, position_side=PositionSide.SHORT
+    )
+
+
+def cover(rm, qty=1.0, price=100.0, equity=10_000.0, cash=10_000.0, fee=0.0):
+    return rm.check_order(
+        Side.BUY, qty, price, equity, cash, 1, True, fee, position_side=PositionSide.SHORT
+    )
 
 
 def test_defaults_match_the_spec():
@@ -111,8 +135,27 @@ def test_entry_rejected_when_symbol_already_has_a_position():
     assert not buy(manager(), open_positions=1, has_position=True).approved
 
 
-def test_sell_without_position_is_rejected():
-    assert not sell(manager(), has_position=False).approved
+def test_sell_without_long_opens_short_when_position_side_is_short():
+    d = short_entry(manager())
+    assert d.approved and d.qty == 1.0
+
+
+def test_sell_marked_as_long_exit_without_position_is_rejected():
+    assert not sell(manager(), has_position=False, position_side=PositionSide.LONG).approved
+
+
+def test_short_entry_respects_max_position_size():
+    d = short_entry(manager(), qty=100, price=100)
+    assert d.approved
+    assert d.qty == pytest.approx(25.0)
+
+
+def test_cover_short_is_allowed_during_daily_halt():
+    rm = manager()
+    rm.update_equity(10_000, DAY1)
+    rm.update_equity(9_600, DAY1 + 60_000)
+    assert rm.state.halted
+    assert cover(rm, equity=9_600, cash=9_600).approved
 
 
 def test_sell_is_not_blocked_by_position_limits():

@@ -53,7 +53,7 @@ export function TradesEmpty({
       "Recent signals include ENTER/EXIT, but nothing is in the order log yet. Wait for the next cycle, or check Signals for reject reasons.";
   } else if (signals && signals.length === 0) {
     why =
-      "No signals have been recorded yet. Leave the paper loop running until it evaluates a closed 4h bar.";
+      "No signals have been recorded yet. Leave the paper loop running until it evaluates a closed 15m bar.";
   } else {
     why =
       "The paper broker only logs fills and risk rejections. Until strategy ENTER/EXIT fires, this list stays empty.";
