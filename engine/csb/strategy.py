@@ -29,7 +29,6 @@ class StrategyParams:
     news_veto: float = -0.30
     news_boost: float = 0.30
     news_boost_mult: float = 1.25
-    min_notional: float = 10.0
 
 
 @dataclass(frozen=True)
