@@ -66,6 +66,74 @@ export interface TradingLoopInfo {
   note: string;
 }
 
+export type ReadinessState =
+  | "warming_up"
+  | "waiting_for_enter"
+  | "ready_to_enter"
+  | "in_position";
+
+export interface ReadinessConditions {
+  trend_up: boolean;
+  breakout: boolean;
+  news_ok: boolean;
+}
+
+export interface SymbolReadiness {
+  symbol: string;
+  last: number | null;
+  quote_ts: number | null;
+  bar_close: number | null;
+  bar_ts: number | null;
+  ema_fast: number | null;
+  ema_slow: number | null;
+  ema_fast_period: number;
+  ema_slow_period: number;
+  trend_up: boolean | null;
+  ema_gap_pct: number | null;
+  prior_high: number | null;
+  breakout_bars: number;
+  breakout_ready: boolean | null;
+  distance_to_breakout: number | null;
+  distance_to_breakout_pct: number | null;
+  atr: number | null;
+  atr_period: number;
+  stop_atr_mult: number;
+  trail_stop: number | null;
+  in_position: boolean;
+  position_stop: number | null;
+  action: Action;
+  state: ReadinessState;
+  conditions: ReadinessConditions;
+  news_state: NewsState;
+  news_score: number | null;
+  sparkline: number[];
+  breakout_level: number | null;
+  last_eval_bar_ts: number | null;
+  ready_for_enter: boolean;
+  bars_ready: number;
+  bars_needed: number;
+}
+
+export interface TradingReadiness {
+  mode: "paper";
+  trading_enabled: boolean;
+  exchange: string;
+  cycle_seconds: number;
+  server_time: number;
+  heartbeat: Heartbeat | null;
+  last_cycle_at: number | null;
+  next_cycle_at: number | null;
+  params: {
+    ema_fast: number;
+    ema_slow: number;
+    breakout_bars: number;
+    atr_period: number;
+    stop_atr_mult: number;
+    signal_hours: number;
+  };
+  symbols: SymbolReadiness[];
+}
+
 export interface Status {
   mode: "paper";
   live_trading: LiveTradingInfo;

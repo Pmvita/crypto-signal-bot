@@ -23,6 +23,7 @@ from csb.jobs import candle_history_summary, run_backfill, run_stored_backtest
 from csb.marketdata import MarketData, create_exchange
 from csb.news_scoring import build_scorer
 from csb.portfolio import load_portfolio
+from csb.readiness import trading_readiness
 from csb.risk import RiskLimits, SqliteRiskStore
 from csb.service import TradingService, scoring_status
 from csb.strategy import StrategyParams, build_snapshots
@@ -187,6 +188,22 @@ def create_app(
         trading_enabled.clear()
         log.info("paper trading paused")
         return trading_payload()
+
+    @app.get("/api/trading/readiness")
+    def trading_readiness_endpoint() -> dict[str, Any]:
+        """Per-symbol live readiness for the Trading watch board (paper only)."""
+        conn = open_conn()
+        try:
+            scorer, _reason = build_scorer(settings)
+            return trading_readiness(
+                conn,
+                settings,
+                trading_enabled=trading_enabled.is_set(),
+                scoring_enabled=scorer is not None,
+                heartbeat=latest_cycle(conn),
+            )
+        finally:
+            conn.close()
 
     @app.get("/api/portfolio")
     def portfolio() -> dict[str, Any]:

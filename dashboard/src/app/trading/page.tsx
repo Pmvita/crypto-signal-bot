@@ -5,13 +5,14 @@ import { LiveTradingWatch } from "@/components/live-trading-watch";
 import { TradingControls } from "@/components/trading-controls";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEngine } from "@/lib/api";
-import type { OrderRow, Portfolio, SignalRow, Status } from "@/lib/types";
+import type { OrderRow, Portfolio, SignalRow, Status, TradingReadiness } from "@/lib/types";
 
 export default function TradingPage() {
   const status = useEngine<Status>("/api/status", 2000);
   const portfolio = useEngine<Portfolio>("/api/portfolio", 2500);
   const signals = useEngine<SignalRow[]>("/api/signals?limit=40", 2500);
   const trades = useEngine<OrderRow[]>("/api/trades?limit=60", 2000);
+  const readiness = useEngine<TradingReadiness>("/api/trading/readiness", 2000);
 
   if (status.error || portfolio.error) {
     return <EngineOffline error={status.error ?? portfolio.error} />;
@@ -31,6 +32,7 @@ export default function TradingPage() {
     void portfolio.mutate();
     void signals.mutate();
     void trades.mutate();
+    void readiness.mutate();
   };
 
   return (
@@ -53,6 +55,7 @@ export default function TradingPage() {
         trades={trades.data ?? []}
         heartbeat={status.data.heartbeat}
         tradingEnabled={Boolean(status.data.trading?.enabled)}
+        readiness={readiness.data}
       />
     </div>
   );

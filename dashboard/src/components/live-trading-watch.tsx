@@ -2,11 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { PositionsTable } from "@/components/positions-table";
+import { ReadinessBoard } from "@/components/readiness-board";
 import { SignalList } from "@/components/signal-list";
+import { Badge } from "@/components/ui/badge";
 import { ago, pnlClass, qty, timeUtc, usd } from "@/lib/format";
-import type { Heartbeat, OrderRow, Portfolio, SignalRow } from "@/lib/types";
+import type { Heartbeat, OrderRow, Portfolio, SignalRow, TradingReadiness } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export function LiveTradingWatch({
@@ -15,12 +16,14 @@ export function LiveTradingWatch({
   trades,
   heartbeat,
   tradingEnabled,
+  readiness,
 }: {
   portfolio: Portfolio | undefined;
   signals: SignalRow[];
   trades: OrderRow[];
   heartbeat: Heartbeat | null | undefined;
   tradingEnabled: boolean;
+  readiness: TradingReadiness | undefined;
 }) {
   const [flashIds, setFlashIds] = useState<Set<number>>(new Set());
   const seenRef = useRef<Set<number>>(new Set());
@@ -42,6 +45,7 @@ export function LiveTradingWatch({
   }, [trades]);
 
   const fills = trades.filter((t) => t.status === "filled" || t.status === "rejected");
+  const flat = (portfolio?.positions.length ?? 0) === 0;
 
   return (
     <div className="space-y-4">
@@ -65,12 +69,31 @@ export function LiveTradingWatch({
         </p>
       </div>
 
+      {tradingEnabled ? (
+        <ReadinessBoard readiness={readiness} tradingEnabled={tradingEnabled} />
+      ) : (
+        <section className="border border-dashed border-border bg-[#0c0c0c]/80 p-4">
+          <p className="font-mono text-xs text-muted-foreground">
+            Start the paper loop to open the live readiness board (EMA trend, Donchian distance, cycle
+            pulse).
+          </p>
+        </section>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="space-y-2 border border-border bg-[#0c0c0c] p-4">
           <h3 className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
             Open positions
           </h3>
-          <PositionsTable rows={portfolio?.positions ?? []} />
+          {flat ? (
+            <p className="font-mono text-xs text-muted-foreground">
+              {tradingEnabled
+                ? "Loop is watching — entries only when trend+breakout fire (see Active watch)."
+                : "No open positions"}
+            </p>
+          ) : (
+            <PositionsTable rows={portfolio?.positions ?? []} />
+          )}
         </section>
         <section className="space-y-2 border border-border bg-[#0c0c0c] p-4">
           <h3 className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">

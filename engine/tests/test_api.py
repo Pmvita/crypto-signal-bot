@@ -210,6 +210,26 @@ def test_candles_series_returns_empty_lists_without_history(client):
         assert body["series"][symbol] == []
 
 
+def test_trading_readiness_returns_per_symbol_board(client):
+    c, settings, _ = client
+    body = c.get("/api/trading/readiness").json()
+    assert body["mode"] == "paper"
+    assert body["trading_enabled"] is False
+    assert body["exchange"] == settings.exchange
+    assert body["cycle_seconds"] >= 1
+    assert "server_time" in body
+    assert set(s["symbol"] for s in body["symbols"]) == set(settings.symbols)
+    for row in body["symbols"]:
+        assert row["state"] in {"warming_up", "waiting_for_enter", "ready_to_enter", "in_position"}
+        assert "conditions" in row
+        assert "trend_up" in row["conditions"]
+        assert "breakout" in row["conditions"]
+        assert "news_ok" in row["conditions"]
+        assert isinstance(row["sparkline"], list)
+        assert row["ema_fast_period"] == 50
+        assert row["breakout_bars"] == 20
+
+
 def test_status_heartbeat_includes_parsed_cycle_summary(client):
     c, _, db = client
     conn = connect(db)
