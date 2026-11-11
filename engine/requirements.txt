@@ -1,0 +1,6 @@
+ccxt
+fastapi
+uvicorn
+httpx
+feedparser
+python-dotenv
