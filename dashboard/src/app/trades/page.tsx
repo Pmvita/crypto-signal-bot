@@ -2,15 +2,20 @@
 
 import { EngineOffline } from "@/components/engine-offline";
 import { OrdersTable } from "@/components/orders-table";
+import { TradesEmpty } from "@/components/trades-empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEngine } from "@/lib/api";
-import type { OrderRow } from "@/lib/types";
+import type { OrderRow, SignalRow, Status } from "@/lib/types";
 
 export default function TradesPage() {
-  const { data, error, isLoading } = useEngine<OrderRow[]>("/api/trades?limit=200", 5000);
+  const trades = useEngine<OrderRow[]>("/api/trades?limit=200", 5000);
+  const status = useEngine<Status>("/api/status", 5000);
+  const signals = useEngine<SignalRow[]>("/api/signals?limit=30", 8000);
 
-  if (error) return <EngineOffline error={error} />;
-  if (isLoading && !data) return <Skeleton className="h-40 w-full" />;
+  if (trades.error) return <EngineOffline error={trades.error} />;
+  if (trades.isLoading && !trades.data) return <Skeleton className="h-40 w-full" />;
+
+  const rows = trades.data ?? [];
 
   return (
     <div className="space-y-4">
@@ -23,7 +28,11 @@ export default function TradesPage() {
         </p>
       </header>
       <div className="border border-border bg-[#0c0c0c] p-3">
-        <OrdersTable rows={data ?? []} />
+        {rows.length === 0 ? (
+          <TradesEmpty status={status.data} signals={signals.data} />
+        ) : (
+          <OrdersTable rows={rows} />
+        )}
       </div>
     </div>
   );

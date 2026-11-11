@@ -11,7 +11,11 @@ import type { OrderRow } from "@/lib/types";
 
 export function OrdersTable({ rows }: { rows: OrderRow[] }) {
   if (rows.length === 0) {
-    return <p className="font-mono text-xs text-muted-foreground">No orders yet</p>;
+    return (
+      <p className="font-mono text-xs text-muted-foreground">
+        No orders in this view — paper fills and rejections will list here.
+      </p>
+    );
   }
   return (
     <Table>
