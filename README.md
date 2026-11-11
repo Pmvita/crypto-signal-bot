@@ -8,6 +8,10 @@ Local **paper-trading** crypto signal bot: public market data via [ccxt](https:/
 
 **License:** proprietary / all rights reserved (see `LICENSE`)
 
+## Desktop app (planned)
+
+A Windows Electron shell (engine start/stop, backfill from the UI, packaged installer) is **planned, not shipped**. Design draft for approval: [`docs/superpowers/specs/2026-11-11-electron-shell-design.md`](docs/superpowers/specs/2026-11-11-electron-shell-design.md). Until that lands, use the Quick start below (`csb serve` + `npm run dev`).
+
 ## Status
 
 Phase 1 works end-to-end on this machine (verified 2026-11-10 / 2026-11-11):
