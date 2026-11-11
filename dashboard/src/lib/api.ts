@@ -2,7 +2,13 @@
 
 import useSWR, { type KeyedMutator } from "swr";
 
-import type { BacktestRun, CandleHistorySummary, RiskLimits, RiskResponse } from "@/lib/types";
+import type {
+  BacktestRun,
+  CandleHistorySummary,
+  RiskLimits,
+  RiskResponse,
+  TradingLoopInfo,
+} from "@/lib/types";
 
 export const ENGINE_URL =
   process.env.NEXT_PUBLIC_ENGINE_URL?.replace(/\/$/, "") || "http://127.0.0.1:8787";
@@ -74,6 +80,18 @@ export async function setKillSwitch(engaged: boolean): Promise<RiskResponse> {
   });
   if (!res.ok) throw await readError(res);
   return res.json() as Promise<RiskResponse>;
+}
+
+export async function startTrading(): Promise<TradingLoopInfo> {
+  const res = await fetch(`${ENGINE_URL}/api/trading/start`, { method: "POST" });
+  if (!res.ok) throw await readError(res);
+  return res.json() as Promise<TradingLoopInfo>;
+}
+
+export async function stopTrading(): Promise<TradingLoopInfo> {
+  const res = await fetch(`${ENGINE_URL}/api/trading/stop`, { method: "POST" });
+  if (!res.ok) throw await readError(res);
+  return res.json() as Promise<TradingLoopInfo>;
 }
 
 export async function runBacktest(): Promise<BacktestRun> {

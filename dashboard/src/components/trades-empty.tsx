@@ -22,6 +22,7 @@ export function TradesEmpty({
 }) {
   const kill = Boolean(status?.risk.kill_switch);
   const halted = Boolean(status?.risk.halted);
+  const tradingOn = Boolean(status?.trading?.enabled);
   const heartbeat = status?.heartbeat;
   const loopOk = heartbeat?.status === "ok";
   const loopError = heartbeat?.status === "error";
@@ -36,11 +37,14 @@ export function TradesEmpty({
   } else if (halted) {
     why =
       "Daily loss halt is active. New entries stay blocked until the next risk day or you adjust limits in Settings.";
+  } else if (!tradingOn) {
+    why =
+      "Paper trading is stopped. Open Trading and press Start trading — the engine can stay up while the loop is paused.";
   } else if (loopError) {
     why = `The paper loop’s last cycle failed${heartbeat?.error ? `: ${heartbeat.error}` : "."} Check the engine log / restart the desk.`;
   } else if (!heartbeat) {
     why =
-      "No paper-loop heartbeat yet. Keep the desk/engine running (`serve` / desktop app) so cycles can evaluate bars and place orders.";
+      "Trading is on but no cycle heartbeat yet. Leave Start trading enabled so cycles can evaluate bars and place orders.";
   } else if (allHold) {
     const symbols = latest.map((r) => r.symbol).join(", ");
     why = `Latest signals are HOLD (${symbols}). HOLD bars do not create orders — fills appear only on ENTER / EXIT.`;
@@ -61,9 +65,14 @@ export function TradesEmpty({
       <p className="max-w-2xl font-mono text-xs leading-relaxed text-muted-foreground">{why}</p>
       <ul className="max-w-2xl list-disc space-y-1.5 pl-4 font-mono text-[11px] leading-relaxed text-muted-foreground">
         <li>
-          Paper loop status:{" "}
+          Paper trading:{" "}
+          <span className={tradingOn ? "text-[var(--gain)]" : "text-muted-foreground"}>
+            {tradingOn ? "on" : "off"}
+          </span>
+          {" · "}
+          cycle:{" "}
           <span className={loopOk ? "text-[var(--gain)]" : loopError ? "text-[var(--loss)]" : ""}>
-            {loopOk ? "running" : loopError ? "error" : heartbeat ? heartbeat.status : "waiting"}
+            {loopOk ? "ok" : loopError ? "error" : heartbeat ? heartbeat.status : "waiting"}
           </span>
           {kill ? " · kill switch ENGAGED" : ""}
           {halted ? " · daily halt ON" : ""}
@@ -72,11 +81,15 @@ export function TradesEmpty({
           Orders are written when risk allows a buy/sell through the paper broker — not on every signal.
         </li>
         <li>
-          Review{" "}
+          Use{" "}
+          <Link href="/trading" className="text-[var(--amber)] underline-offset-2 hover:underline">
+            Trading
+          </Link>{" "}
+          to start/stop the loop and watch the live tape;{" "}
           <Link href="/signals" className="text-[var(--amber)] underline-offset-2 hover:underline">
             Signals
           </Link>{" "}
-          for HOLD vs ENTER/EXIT, and{" "}
+          for HOLD vs ENTER/EXIT;{" "}
           <Link href="/settings" className="text-[var(--amber)] underline-offset-2 hover:underline">
             Settings
           </Link>{" "}

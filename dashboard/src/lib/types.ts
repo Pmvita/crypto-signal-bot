@@ -60,9 +60,17 @@ export interface CandleSeriesResponse {
   series: Record<string, CandlePoint[]>;
 }
 
+export interface TradingLoopInfo {
+  enabled: boolean;
+  supervisor: boolean;
+  note: string;
+}
+
 export interface Status {
   mode: "paper";
   live_trading: LiveTradingInfo;
+  /** Present on current engines; optional so a mid-upgrade desk still typechecks. */
+  trading?: TradingLoopInfo;
   exchange: string;
   symbols: string[];
   heartbeat: Heartbeat | null;

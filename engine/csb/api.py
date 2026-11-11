@@ -59,26 +59,41 @@ def create_app(
 ) -> FastAPI:
     factory = service_factory or default_service_factory
     stop = threading.Event()
+    # Cleared until POST /api/trading/start — engine up ≠ auto paper trading.
+    trading_enabled = threading.Event()
     loop_thread: threading.Thread | None = None
-    # Shared connection used only by the background trading loop.
+    # Shared connection used only by the background supervisor / trading loop.
     loop_conn = connect(settings.db_path)
     init_schema(loop_conn)
     service = factory(settings, loop_conn)
+
+    def trading_payload() -> dict[str, Any]:
+        return {
+            "enabled": trading_enabled.is_set(),
+            "supervisor": loop_thread is not None and loop_thread.is_alive(),
+            "note": (
+                "Paper trading loop is running."
+                if trading_enabled.is_set()
+                else "Paper trading is stopped. Start it from the Trading page. Portfolio is preserved."
+            ),
+        }
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> Generator[None, None, None]:
         nonlocal loop_thread
         if start_loop:
+            # Supervisor always runs (market/news refresh). Trading evaluate/orders stay off until API start.
             loop_thread = threading.Thread(
                 target=service.run_forever,
-                args=(stop,),
-                name="csb-trading-loop",
+                args=(stop, trading_enabled),
+                name="csb-engine-supervisor",
                 daemon=True,
             )
             loop_thread.start()
-            log.info("paper trading loop started")
+            log.info("engine supervisor started (paper trading paused until /api/trading/start)")
         yield
         stop.set()
+        trading_enabled.clear()
         if loop_thread is not None:
             loop_thread.join(timeout=settings.cycle_seconds + 5)
         loop_conn.close()
@@ -148,6 +163,7 @@ def create_app(
                     "available": False,
                     "reason": "Live trading is not available in phase 1.",
                 },
+                "trading": trading_payload(),
                 "exchange": settings.exchange,
                 "symbols": list(settings.symbols),
                 "heartbeat": latest_cycle(conn),
@@ -157,6 +173,20 @@ def create_app(
             }
         finally:
             conn.close()
+
+    @app.post("/api/trading/start")
+    def trading_start() -> dict[str, Any]:
+        """Enable paper evaluate/order cycles. Does not reset the portfolio."""
+        trading_enabled.set()
+        log.info("paper trading enabled")
+        return trading_payload()
+
+    @app.post("/api/trading/stop")
+    def trading_stop() -> dict[str, Any]:
+        """Pause paper evaluate/order cycles. Market/news refresh continues; portfolio kept."""
+        trading_enabled.clear()
+        log.info("paper trading paused")
+        return trading_payload()
 
     @app.get("/api/portfolio")
     def portfolio() -> dict[str, Any]:
@@ -527,4 +557,5 @@ def create_app(
     app.state.settings = settings  # type: ignore[attr-defined]
     app.state.service = service  # type: ignore[attr-defined]
     app.state.api_host = API_HOST  # type: ignore[attr-defined]
+    app.state.trading_enabled = trading_enabled  # type: ignore[attr-defined]
     return app

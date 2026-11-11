@@ -8,8 +8,12 @@ import type { Status } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 function cycleBlurb(status: Status | undefined): string {
+  const tradingOn = Boolean(status?.trading?.enabled);
   const hb = status?.heartbeat;
-  if (!hb) return "No cycle yet — start the engine to evaluate the market.";
+  if (!tradingOn) {
+    return "Engine services only — paper trading is stopped. Open Trading to start the loop.";
+  }
+  if (!hb) return "Trading on — waiting for the first evaluate cycle.";
   const summary = hb.summary;
   if (!summary) {
     return hb.error
@@ -39,7 +43,7 @@ export function EngineControlStrip() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-            <span className="text-[var(--amber)]">Paper engine</span>
+            <span className="text-[var(--amber)]">Engine</span>
             <span className="text-border">·</span>
             <span
               className={cn(
@@ -48,7 +52,19 @@ export function EngineControlStrip() {
             >
               {reachable ? "API reachable" : "API offline"}
             </span>
-            {hb ? (
+            {data?.trading ? (
+              <>
+                <span className="text-border">·</span>
+                <span
+                  className={
+                    data.trading.enabled ? "text-[var(--gain)]" : "text-muted-foreground"
+                  }
+                >
+                  trading {data.trading.enabled ? "on" : "off"}
+                </span>
+              </>
+            ) : null}
+            {hb && data?.trading?.enabled ? (
               <>
                 <span className="text-border">·</span>
                 <span
@@ -68,8 +84,9 @@ export function EngineControlStrip() {
           <p className="truncate font-mono text-xs text-muted-foreground">{cycleBlurb(data)}</p>
           {!electron ? (
             <p className="font-mono text-[10px] text-muted-foreground">
-              Browser mode: Start/Stop is disabled — use the desktop app, or{" "}
-              <code className="text-[var(--amber)]">python -m csb serve</code>.
+              Browser mode: Engine Start/Stop is disabled — use the desktop app, or{" "}
+              <code className="text-[var(--amber)]">python -m csb serve</code>. Paper trading
+              controls live on the Trading page.
             </p>
           ) : null}
         </div>

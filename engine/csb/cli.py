@@ -120,8 +120,9 @@ def cmd_cycle(settings: Settings) -> int:
 
 def cmd_serve(settings: Settings) -> int:
     app = create_app(settings, start_loop=True)
-    print(f"Serving paper engine on http://{API_HOST}:{settings.api_port}")
-    print("Live trading is not available in phase 1.")
+    print(f"Serving engine API on http://{API_HOST}:{settings.api_port}")
+    print("Paper trading loop starts STOPPED — use Trading page or POST /api/trading/start.")
+    print("Live exchange trading is not available in phase 1.")
     uvicorn.run(app, host=API_HOST, port=settings.api_port, log_level="info")
     return 0
 
@@ -136,7 +137,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("backtest", help="Run the price-only backtest on stored candles")
     sub.add_parser("news", help="Fetch RSS headlines once")
     sub.add_parser("cycle", help="Run one paper trading cycle")
-    sub.add_parser("serve", help="Start the local API and background paper loop")
+    sub.add_parser(
+        "serve",
+        help="Start the local API + market/news supervisor (paper trading paused until started)",
+    )
     return parser
 
 

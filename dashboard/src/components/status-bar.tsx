@@ -23,11 +23,16 @@ export function StatusBar() {
   const hb = data.heartbeat;
   const kill = data.risk.kill_switch;
   const scoring = data.news_scoring.enabled ? "ON" : "OFF";
+  const tradingOn = Boolean(data.trading?.enabled);
 
   return (
     <div className="flex h-9 items-center gap-3 overflow-x-auto border-b border-border bg-[#0a0a0a] px-4 font-mono text-[11px] tracking-wide text-muted-foreground">
       <Badge className="bg-[var(--amber)] text-black hover:bg-[var(--amber)]">PAPER</Badge>
-      <span className="text-[var(--amber)]">Live trading: not available</span>
+      <span className="text-[var(--amber)]">Exchange live: n/a</span>
+      <span className="text-border">|</span>
+      <span className={tradingOn ? "text-[var(--gain)]" : "text-muted-foreground"}>
+        paper loop {tradingOn ? "ON" : "OFF"}
+      </span>
       <span className="text-border">|</span>
       <span>{data.exchange}</span>
       <span className="text-border">|</span>

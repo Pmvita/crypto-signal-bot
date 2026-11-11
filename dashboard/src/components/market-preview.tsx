@@ -42,7 +42,8 @@ function positionBySymbol(positions: PositionRow[]): Map<string, PositionRow> {
   return new Map(positions.map((p) => [p.symbol, p]));
 }
 
-function cycleLine(hb: Heartbeat | null | undefined): string {
+function cycleLine(hb: Heartbeat | null | undefined, tradingEnabled: boolean): string {
+  if (!tradingEnabled) return "Paper trading paused — open Trading to start the loop";
   if (!hb) return "Waiting for first paper cycle…";
   const summary = hb.summary;
   if (!summary) {
@@ -65,6 +66,7 @@ export function MarketPreview({
   candles,
   heartbeat,
   exchange,
+  tradingEnabled = false,
 }: {
   portfolio: Portfolio;
   signals: SignalRow[];
@@ -72,6 +74,7 @@ export function MarketPreview({
   candles: CandleSeriesResponse | undefined;
   heartbeat: Heartbeat | null | undefined;
   exchange: string;
+  tradingEnabled?: boolean;
 }) {
   const latest = latestBySymbol(signals);
   const open = positionBySymbol(portfolio.positions);
@@ -97,20 +100,22 @@ export function MarketPreview({
             Live market preview
           </h2>
           <p className="mt-1 font-mono text-xs text-muted-foreground">
-            What the paper bot sees on {exchange} right now · auto-refresh
+            What the paper bot sees on {exchange} right now · auto-refresh · loop control on Trading
           </p>
         </div>
         <p
           className={cn(
             "font-mono text-[11px]",
-            heartbeat?.status === "ok"
-              ? "text-[var(--gain)]"
-              : heartbeat?.status === "error"
-                ? "text-[var(--loss)]"
-                : "text-muted-foreground",
+            !tradingEnabled
+              ? "text-muted-foreground"
+              : heartbeat?.status === "ok"
+                ? "text-[var(--gain)]"
+                : heartbeat?.status === "error"
+                  ? "text-[var(--loss)]"
+                  : "text-muted-foreground",
           )}
         >
-          {cycleLine(heartbeat)}
+          {cycleLine(heartbeat, tradingEnabled)}
         </p>
       </div>
 

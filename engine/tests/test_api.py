@@ -1,3 +1,5 @@
+import threading
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -6,6 +8,7 @@ from csb.config import load_settings
 from csb.db import connect, init_schema
 from csb.models import Headline, Quote
 from csb.news_store import save_headlines
+from csb.service import TradingService
 
 
 @pytest.fixture
@@ -45,6 +48,87 @@ def test_status_reports_paper_mode_and_live_trading_unavailable(client):
     body = c.get("/api/status").json()
     assert body["mode"] == "paper"
     assert body["live_trading"]["available"] is False
+    assert body["trading"]["enabled"] is False
+    assert "stopped" in body["trading"]["note"].lower() or "start" in body["trading"]["note"].lower()
+
+
+def test_trading_start_stop_toggles_without_resetting_flag_semantics(client):
+    c, _, _ = client
+    assert c.get("/api/status").json()["trading"]["enabled"] is False
+    started = c.post("/api/trading/start").json()
+    assert started["enabled"] is True
+    assert c.get("/api/status").json()["trading"]["enabled"] is True
+    stopped = c.post("/api/trading/stop").json()
+    assert stopped["enabled"] is False
+    assert c.get("/api/status").json()["trading"]["enabled"] is False
+
+
+def test_run_forever_skips_trading_cycles_until_enabled(tmp_path):
+    """Supervisor refreshes data while paused; run_cycle only after trading_enabled is set."""
+    db = tmp_path / "paused.sqlite3"
+    settings = load_settings(
+        {
+            "CSB_DB_PATH": str(db),
+            "CSB_EXCHANGE": "fake",
+            "CSB_SYMBOLS": "BTC/USD",
+            "CSB_STARTING_CASH": "10000",
+            "CSB_CYCLE_SECONDS": "60",
+            "OPENAI_API_KEY": "",
+        }
+    )
+    conn = connect(db)
+    init_schema(conn)
+
+    class StubMarket:
+        exchange_id = "fake"
+
+        def update(self, symbol):
+            return 0
+
+        def quote(self, symbol):
+            return Quote(symbol, 100.0, 100.2, 100.1, 1_700_000_000_000)
+
+    svc = TradingService(settings, conn, StubMarket(), None, "off")
+    svc._last_news_fetch = 10**15  # skip live RSS in this unit test
+    steps: list[str] = []
+
+    def guarded_cycle():
+        steps.append("cycle")
+        return {
+            "id": 1,
+            "started_at": 0,
+            "finished_at": 0,
+            "status": "ok",
+            "error": None,
+        }
+
+    def guarded_refresh():
+        steps.append("refresh")
+        return {"candles_added": {}, "news": None}
+
+    svc.run_cycle = guarded_cycle  # type: ignore[method-assign]
+    svc.refresh_market_data = guarded_refresh  # type: ignore[method-assign]
+
+    stop = threading.Event()
+    enabled = threading.Event()
+    beats = {"n": 0}
+
+    def advance(_timeout=None):
+        beats["n"] += 1
+        if beats["n"] == 1:
+            assert steps == ["refresh"]
+            enabled.set()
+        elif beats["n"] == 2:
+            assert steps == ["refresh", "cycle"]
+            enabled.clear()
+        elif beats["n"] >= 3:
+            assert steps == ["refresh", "cycle", "refresh"]
+            stop.set()
+        return False
+
+    stop.wait = advance  # type: ignore[method-assign]
+    svc.run_forever(stop, enabled)
+    assert steps == ["refresh", "cycle", "refresh"]
 
 
 def test_status_reports_scoring_off_without_key(client):

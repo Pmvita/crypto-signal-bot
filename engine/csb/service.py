@@ -89,15 +89,46 @@ class TradingService:
 
     # ------------------------------------------------------------------ loop
 
-    def run_forever(self, stop: threading.Event) -> None:
+    def run_forever(
+        self,
+        stop: threading.Event,
+        trading_enabled: threading.Event | None = None,
+    ) -> None:
+        """Background supervisor: always refreshes market/news; paper evaluate/orders only when enabled.
+
+        When ``trading_enabled`` is None, trading stays on (CLI ``cycle`` / legacy callers).
+        When an Event is passed, it starts cleared — enable via API before ENTER/EXIT cycles run.
+        """
         while not stop.is_set():
-            summary = self.run_cycle()
-            if summary["status"] != "ok":
-                log.error("cycle %s failed: %s", summary["id"], summary["error"])
+            if trading_enabled is None or trading_enabled.is_set():
+                summary = self.run_cycle()
+                if summary["status"] != "ok":
+                    log.error("cycle %s failed: %s", summary["id"], summary["error"])
+            else:
+                try:
+                    self.refresh_market_data()
+                except Exception:  # noqa: BLE001 - keep supervisor alive while trading is paused
+                    self._conn.rollback()
+                    log.exception("market data refresh failed while trading paused")
             stop.wait(self._settings.cycle_seconds)
 
+    def refresh_market_data(self) -> dict[str, Any]:
+        """Candles, news, quotes, equity — no strategy evaluation or paper orders."""
+        now = self._clock()
+        summary: dict[str, Any] = {"candles_added": {}, "news": None}
+        quotes = self._ingest_market(now, summary)
+        portfolio = load_portfolio(self._conn, self._settings.starting_cash)
+        equity = portfolio.equity({symbol: quote.last for symbol, quote in quotes.items()})
+        self._risk.update_equity(equity, now)
+        self._conn.execute(
+            "insert or replace into equity_snapshots (ts, equity, cash) values (?, ?, ?)",
+            (now, equity, portfolio.cash),
+        )
+        self._conn.commit()
+        return summary
+
     def run_cycle(self) -> dict[str, Any]:
-        """One full cycle. Never raises: a failure is recorded on the cycle row and returned."""
+        """One full trading cycle. Never raises: a failure is recorded on the cycle row and returned."""
         started = self._clock()
         cursor = self._conn.execute("insert into cycles (started_at, status) values (?, 'running')", (started,))
         self._conn.commit()
@@ -127,7 +158,7 @@ class TradingService:
 
     # ----------------------------------------------------------------- steps
 
-    def _cycle(self, now: int, summary: dict[str, Any]) -> None:
+    def _ingest_market(self, now: int, summary: dict[str, Any]) -> dict[str, Quote]:
         symbols = self._settings.symbols
         for symbol in symbols:
             summary["candles_added"][symbol] = self._market.update(symbol)
@@ -137,6 +168,10 @@ class TradingService:
 
         quotes = {symbol: self._market.quote(symbol) for symbol in symbols}
         self._save_quotes(quotes)
+        return quotes
+
+    def _cycle(self, now: int, summary: dict[str, Any]) -> None:
+        quotes = self._ingest_market(now, summary)
 
         portfolio = load_portfolio(self._conn, self._settings.starting_cash)
         equity = portfolio.equity({symbol: quote.last for symbol, quote in quotes.items()})
@@ -147,7 +182,7 @@ class TradingService:
         )
 
         evaluations: list[_Evaluation] = []
-        for symbol in symbols:
+        for symbol in self._settings.symbols:
             evaluation = self._evaluate(symbol, now, portfolio.positions.get(symbol), summary)
             if evaluation is not None:
                 evaluations.append(evaluation)

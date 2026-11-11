@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { EngineOffline } from "@/components/engine-offline";
 import { EquityChart } from "@/components/equity-chart";
 import { HeadlineList } from "@/components/headline-list";
@@ -51,7 +53,15 @@ export default function DeskPage() {
           Desk
         </h1>
         <p className="mt-1 font-mono text-xs text-muted-foreground">
-          Paper account on {status.data.exchange} · live trading not available
+          Paper account on {status.data.exchange} · exchange live trading not available · paper loop{" "}
+          {status.data.trading?.enabled ? "on" : "off"}
+        </p>
+        <p className="mt-2 font-mono text-[11px] text-muted-foreground">
+          To start/stop paper auto-trading and watch the live tape, open{" "}
+          <Link href="/trading" className="text-[var(--amber)] underline-offset-2 hover:underline">
+            Trading
+          </Link>
+          .
         </p>
       </header>
 
@@ -62,6 +72,7 @@ export default function DeskPage() {
         candles={candles.data}
         heartbeat={status.data.heartbeat}
         exchange={status.data.exchange}
+        tradingEnabled={Boolean(status.data.trading?.enabled)}
       />
 
       <section className="grid grid-cols-2 gap-6 border border-border bg-[#0c0c0c] p-4 md:grid-cols-5">

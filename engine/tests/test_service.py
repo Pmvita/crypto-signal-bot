@@ -117,6 +117,17 @@ def rows(conn, table):
     return [dict(r) for r in conn.execute(f"select * from {table} order by 1")]
 
 
+def test_refresh_market_data_updates_quotes_without_signals_or_orders(env):
+    _, conn = env
+    summary = make(env).refresh_market_data()
+    assert "candles_added" in summary
+    assert rows(conn, "signals") == []
+    assert rows(conn, "orders") == []
+    assert rows(conn, "cycles") == []
+    assert rows(conn, "quotes")[0]["last"] == 102.0
+    assert len(rows(conn, "equity_snapshots")) == 1
+
+
 def test_cycle_records_signal_and_fills_entry_at_live_quote(env):
     _, conn = env
     summary = make(env).run_cycle()

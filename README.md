@@ -27,7 +27,7 @@ Get Windows installers from **[GitHub Releases](https://github.com/Pmvita/crypto
 
 ## Desktop app (preferred daily path)
 
-Windows Electron shell wraps the engine + desk: Start/Stop engine, Run backfill, Settings **Check for updates** (git pull for local checkouts), and first-run Python venv setup.
+Windows Electron shell wraps the engine + desk: **Start/Stop engine** (API + market/news supervisor only), Run backfill, Settings **Check for updates** (git pull for local checkouts), and first-run Python venv setup. **Paper trading** is separate: open the **Trading** page and press Start/Stop trading (`POST /api/trading/start|stop`). The loop starts **stopped** after every engine start (safer); the paper portfolio is not reset. Live watch (positions, signals, paper tape) is on Trading.
 
 Design: [`docs/superpowers/specs/2026-11-11-electron-shell-design.md`](docs/superpowers/specs/2026-11-11-electron-shell-design.md).
 
@@ -45,7 +45,7 @@ cd dashboard; npm ci; cd ..
 npm run desktop:dev
 ```
 
-That starts Electron, ensures AppData `.venv` + `.env`, starts the desk on `127.0.0.1:3000`, and starts `csb serve` on `127.0.0.1:8787`.
+That starts Electron, ensures AppData `.venv` + `.env`, starts the desk on `127.0.0.1:3000`, and starts `csb serve` on `127.0.0.1:8787` with the paper trading loop paused until you start it on Trading.
 
 | Mode | Data / `.env` / venv |
 |---|---|
@@ -156,7 +156,7 @@ $env:PYTHONPATH = "$PWD\engine"
 .\.venv\Scripts\python.exe -m csb backtest
 .\.venv\Scripts\python.exe -m csb news
 .\.venv\Scripts\python.exe -m csb cycle
-.\.venv\Scripts\python.exe -m csb serve   # http://127.0.0.1:8787
+.\.venv\Scripts\python.exe -m csb serve   # API + data supervisor; trading paused until /api/trading/start
 
 # dashboard (second terminal)
 cd dashboard
